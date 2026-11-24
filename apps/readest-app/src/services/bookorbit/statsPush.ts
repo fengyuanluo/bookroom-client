@@ -39,17 +39,27 @@ const toWireBooks = (events: PageStatEvent[]): PageStatsBookWire[] => {
  * 50 distinct books and 500 events per request. The cursor advances after each
  * successful chunk that completes a startTime, so an interrupted push resumes
  * without dropping same-second events. Mirrors pushStats in statsSync.ts.
+ * Only books `isSynced` accepts are sent (ADR 0010).
  */
 export const pushStatsToBookOrbit = async (
   stats: StatsPushDb,
   client: StatsPushClient,
+  isSynced: (bookMd5: string) => boolean,
 ): Promise<void> => {
   const cursor = await stats.getCursor('bookorbit-push');
   const { events: rawEvents } = await stats.getEventsForPush(cursor);
   // The server validates startTime >= 1 and totalPages >= 1; dropping the
   // stragglers locally keeps one bad row from failing a whole chunk.
-  const events = rawEvents.filter((event) => event.startTime >= 1 && event.totalPages >= 1);
-  if (events.length === 0) return;
+  const events = rawEvents.filter(
+    (event) => event.startTime >= 1 && event.totalPages >= 1 && isSynced(event.bookMd5),
+  );
+  // Skipped events are never sent, so the cursor may pass them all once every
+  // event worth sending has gone out.
+  const lastRawStartTime = rawEvents[rawEvents.length - 1]?.startTime;
+  if (events.length === 0) {
+    if (lastRawStartTime !== undefined) await stats.setCursor('bookorbit-push', lastRawStartTime);
+    return;
+  }
 
   let i = 0;
   while (i < events.length) {
@@ -86,4 +96,5 @@ export const pushStatsToBookOrbit = async (
     }
     i = end;
   }
+  await stats.setCursor('bookorbit-push', lastRawStartTime!);
 };

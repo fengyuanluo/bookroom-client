@@ -18,7 +18,6 @@ import {
   getDisplayedTimeRemaining,
 } from '@/app/library/utils/libraryUtils';
 import { formatDurationAndPagesLeft, formatDurationLeft } from '@/utils/duration';
-import { isAudiobook } from '@/utils/audiobook';
 import { getReferencePageInfo, type ReferencePageInfo } from '@/utils/progress';
 import { StatisticsDb } from '@/services/statistics/statisticsDb';
 import { resolveBooksDir, type BookshelfWidgetPlayback } from './bookshelfWidget';
@@ -114,8 +113,7 @@ const refreshReadingWidgetImpl = async (
     timeLeftMinutes = instances.some((instance) => instance.showTimeLeft)
       ? getDisplayedTimeRemaining(book, await medianPageDurationSecsFor(appService, book))
       : undefined;
-    // An audiobook's progress is in seconds, so it has no page stats.
-    pagesRemaining = book.progress && !isAudiobook(book) ? book.progress[1] - book.progress[0] : 0;
+    pagesRemaining = book.progress ? book.progress[1] - book.progress[0] : 0;
     // The footer's reference pages: a book's page list needs the book open, so use the
     // page count saved in its config, read only when a widget asks for it.
     if (book.progress?.[1] && instances.some((instance) => instance.referencePages)) {
@@ -147,7 +145,7 @@ const refreshReadingWidgetImpl = async (
       const stats = [
         book && instance.showPercent ? _('{{percent}}% Read', { percent }) : '',
         remainingText,
-        book && instance.showPageCount && book.progress && !isAudiobook(book)
+        book && instance.showPageCount && book.progress
           ? instance.referencePages && referencePageInfo
             ? `${referencePageInfo.current} / ${referencePageInfo.total}`
             : `${book.progress[0]} / ${book.progress[1]}`

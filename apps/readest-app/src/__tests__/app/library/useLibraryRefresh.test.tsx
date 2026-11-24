@@ -8,7 +8,6 @@ const h = vi.hoisted(() => ({
   router: { push: vi.fn(), replace: vi.fn() },
   login: vi.fn(),
   opds: vi.fn(async (_verbose?: boolean) => {}),
-  abs: vi.fn(async () => {}),
   pull: vi.fn(async (_full?: boolean, _verbose?: boolean) => {}),
   stages: [] as (() => Promise<void>)[],
 }));
@@ -18,7 +17,6 @@ vi.mock('@/utils/nav', () => ({ navigateToLogin: (...args: unknown[]) => h.login
 vi.mock('@/hooks/useOPDSSubscriptions', () => ({
   useOPDSSubscriptions: () => ({ checkOPDSSubscriptions: h.opds }),
 }));
-vi.mock('@/hooks/useABSSync', () => ({ useABSSync: () => ({ checkABSServers: h.abs }) }));
 vi.mock('@/hooks/usePullToRefresh', () => ({
   usePullToRefresh: (_ref: unknown, ...stages: (() => Promise<void>)[]) => {
     h.stages = stages;
@@ -26,29 +24,17 @@ vi.mock('@/hooks/usePullToRefresh', () => ({
 }));
 
 import { useSettingsStore } from '@/store/settingsStore';
-import {
-  setCachedUserPlan,
-  setCachedCustomizationPurchased,
-} from '@/services/sync/cloudSyncProvider';
 
-vi.mock('@/services/runtimeConfig', () => ({ getRuntimeConfig: () => ({ selfHosted: false }) }));
 import { useLibraryRefresh } from '@/app/library/hooks/useLibraryRefresh';
 
 const defaults = DEFAULT_SYSTEM_SETTINGS as SystemSettings;
 beforeEach(() => {
   vi.clearAllMocks();
   h.user = null;
-  vi.stubEnv('SELF_HOSTED', 'false');
-  vi.stubEnv('NEXT_PUBLIC_SELF_HOSTED', 'false');
-  setCachedUserPlan('plus');
-  setCachedCustomizationPurchased(false);
-  useSettingsStore.setState({ settings: { ...defaults, opdsCatalogs: [], absServers: [] } });
+  useSettingsStore.setState({ settings: { ...defaults, opdsCatalogs: [] } });
 });
 afterEach(() => {
   cleanup();
-  vi.unstubAllEnvs();
-  setCachedUserPlan(undefined);
-  setCachedCustomizationPurchased(false);
 });
 
 for (const [stage, fullRefresh] of [false, true].entries()) {
@@ -86,19 +72,7 @@ for (const [stage, fullRefresh] of [false, true].entries()) {
       expect(h.pull).toHaveBeenCalledWith(fullRefresh, true);
     });
 
-    it('prompts for sign-in when the only file backend is paused by the plan gate', async () => {
-      setCachedUserPlan('free');
-      const settings = useSettingsStore.getState().settings;
-      useSettingsStore.setState({
-        settings: { ...settings, webdav: { ...settings.webdav, enabled: true } },
-      });
-      await refresh();
-      expect(h.login).toHaveBeenCalledWith(h.router);
-      expect(h.pull).not.toHaveBeenCalled();
-    });
-
-    it('refreshes OPDS even when a configured file backend is paused', async () => {
-      setCachedUserPlan('free');
+    it('refreshes OPDS even when a file backend is configured', async () => {
       const settings = useSettingsStore.getState().settings;
       useSettingsStore.setState({
         settings: {
@@ -114,31 +88,17 @@ for (const [stage, fullRefresh] of [false, true].entries()) {
       expect(h.opds).toHaveBeenCalledWith(true);
     });
 
-    it('refreshes Audiobookshelf without a Readest account', async () => {
-      useSettingsStore.getState().settings.absServers = [
-        { id: 'abs', name: 'Audio', url: 'https://audio.example' },
-      ];
-      await refresh();
-      expect(h.login).not.toHaveBeenCalled();
-      expect(h.abs).toHaveBeenCalledOnce();
-    });
-
     it('prompts for sign-in when no external sources are configured', async () => {
       await refresh();
       expect(h.login).toHaveBeenCalledWith(h.router);
       expect(h.pull).not.toHaveBeenCalled();
       expect(h.opds).not.toHaveBeenCalled();
-      expect(h.abs).not.toHaveBeenCalled();
     });
 
     it('ignores disabled and deleted sources when deciding whether to prompt', async () => {
       useSettingsStore.getState().settings.opdsCatalogs = [
         { id: 'off', name: 'Off', url: 'https://books.example', disabled: true },
         { id: 'gone', name: 'Gone', url: 'https://books.example', deletedAt: 1 },
-      ];
-      useSettingsStore.getState().settings.absServers = [
-        { id: 'off', name: 'Off', url: 'https://audio.example', disabled: true },
-        { id: 'gone', name: 'Gone', url: 'https://audio.example', deletedAt: 1 },
       ];
       await refresh();
       expect(h.login).toHaveBeenCalledOnce();
@@ -164,7 +124,6 @@ for (const [stage, fullRefresh] of [false, true].entries()) {
       await pending;
       expect(h.login).not.toHaveBeenCalled();
       expect(h.pull).toHaveBeenCalledWith(fullRefresh, true);
-      expect(h.abs).toHaveBeenCalledOnce();
     });
   });
 }

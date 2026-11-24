@@ -24,7 +24,6 @@ const anki = vi.hoisted(() => ({
 }));
 const account = vi.hoisted(() => ({
   user: { id: 'u1' } as { id: string } | null,
-  plan: 'plus' as string | undefined,
 }));
 
 vi.mock('@/hooks/useTranslation', () => ({ useTranslation: () => (s: string) => s }));
@@ -33,9 +32,6 @@ vi.mock('@/context/EnvContext', () => ({
 }));
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ user: account.user, token: account.user ? 'token' : null }),
-}));
-vi.mock('@/hooks/useQuotaStats', () => ({
-  useQuotaStats: () => ({ userProfilePlan: account.plan, customizationPurchased: false }),
 }));
 // Android-only hooks (back-key interception) call the native bridge.
 vi.mock('@/utils/bridge', async (importOriginal) => ({
@@ -96,7 +92,6 @@ beforeEach(() => {
   appService.isAndroidApp = false;
   localStorage.clear();
   account.user = { id: 'u1' };
-  account.plan = 'plus';
   anki.ankiStatus.mockReset().mockResolvedValue({ installed: true, granted: true });
   anki.ankiRequestPermission.mockReset().mockResolvedValue(true);
   anki.ankiListDecks.mockReset().mockResolvedValue([{ id: 7, name: 'Readest Vocabulary' }]);
@@ -468,37 +463,13 @@ describe('VocabularyView Anki link', () => {
     dispatch.mockRestore();
   });
 
-  it('does not pull on open without access, or for a free account', async () => {
+  it('does not pull on open without access', async () => {
     anki.ankiStatus.mockResolvedValue({ installed: true, granted: false });
-    renderWithMenu();
-    await syncButton();
-    await settle();
-    cleanup();
-    anki.ankiStatus.mockResolvedValue({ installed: true, granted: true });
-    account.plan = 'free';
     renderWithMenu();
     await syncButton();
     await settle();
     expect(anki.ankiListDecks).not.toHaveBeenCalled();
     expect(anki.ankiRequestPermission).not.toHaveBeenCalled();
-  });
-
-  it('pulls once on open when the plan arrives after AnkiDroid answers', async () => {
-    account.plan = undefined;
-    const view = renderWithMenu();
-    await syncButton();
-    await settle();
-    expect(anki.ankiListDecks).not.toHaveBeenCalled();
-    account.plan = 'plus';
-    for (let i = 0; i < 2; i++) {
-      view.rerender(
-        <DropdownProvider>
-          <VocabularyView />
-        </DropdownProvider>,
-      );
-      await settle();
-    }
-    expect(anki.ankiListDecks).toHaveBeenCalledTimes(1);
   });
 
   it('reads AnkiDroid status again on every sync', async () => {
@@ -511,20 +482,6 @@ describe('VocabularyView Anki link', () => {
     }
     // Once on open, then once per sync.
     expect(anki.ankiStatus).toHaveBeenCalledTimes(3);
-  });
-
-  it('sends a free account to the plans page instead of syncing', async () => {
-    account.plan = 'free';
-    renderWithMenu();
-    const sync = await syncButton();
-    expect(sync.textContent).not.toContain('Premium');
-    fireEvent.click(sync);
-    expect(push).toHaveBeenCalledWith(expect.stringContaining('/user?redirect='));
-    openMenu('More');
-    expect(screen.getByRole('menuitem', { name: /Import Anki Deck/ }).textContent).toContain(
-      'Premium',
-    );
-    expect(anki.ankiStatus).toHaveBeenCalledTimes(1);
   });
 
   it('imports a deck from the menu, bringing a mature new word in as Mastered', async () => {
@@ -603,16 +560,6 @@ describe('VocabularyView Anki link', () => {
     expect((saveFile.mock.calls[0] as unknown as [string])[0]).toBe('readest-vocabulary-anki.txt');
   });
 
-  it('gates the Anki file export behind premium', () => {
-    appService.isAndroidApp = false;
-    account.plan = 'free';
-    renderWithMenu();
-    openMenu('Export');
-    fireEvent.click(screen.getByRole('menuitem', { name: /Export to Anki/ }));
-    expect(push).toHaveBeenCalledWith(expect.stringContaining('/user?redirect='));
-    expect(saveFile).not.toHaveBeenCalled();
-  });
-
   it('reads the Readest deck together with its subdecks', async () => {
     anki.ankiListDecks.mockResolvedValue([
       { id: 7, name: 'Readest Vocabulary' },
@@ -626,22 +573,9 @@ describe('VocabularyView Anki link', () => {
     expect(anki.ankiReadDeck).toHaveBeenLastCalledWith([7, 8], true);
   });
 
-  it('lets an entitled account sync while its plan is still loading', async () => {
-    account.plan = undefined;
-    const quota = await import('@/hooks/useQuotaStats');
-    const spy = vi
-      .spyOn(quota, 'useQuotaStats')
-      .mockReturnValue({ userProfilePlan: undefined, customizationPurchased: true } as never);
-    renderWithMenu();
-    fireEvent.click(await syncButton());
-    await waitFor(() => expect(anki.ankiAddNotes).toHaveBeenCalled());
-    spy.mockRestore();
-  });
-
   it('lets a signed-out reader on a self-hosted server use it', async () => {
     vi.stubEnv('NEXT_PUBLIC_SELF_HOSTED', 'true');
     account.user = null;
-    account.plan = undefined;
     renderWithMenu();
     fireEvent.click(await syncButton());
     await waitFor(() => expect(anki.ankiAddNotes).toHaveBeenCalled());

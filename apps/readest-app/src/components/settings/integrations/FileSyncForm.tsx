@@ -19,7 +19,11 @@ import {
 } from '@/services/sync/file/providerRegistry';
 import type { KOSyncStrategy } from '@/types/settings';
 import { BoxedList, SettingsRow, SettingsSelect, SettingsSwitchRow } from '../primitives';
-import { recordLibraryPass, recordLibraryPassFailure } from '@/services/sync/file/runLibrarySync';
+import {
+  recordLibraryPass,
+  recordLibraryPassFailure,
+  splitLibraryForBackend,
+} from '@/services/sync/file/runLibrarySync';
 
 /** The settings fields the shared sync controls read/write (WebDAV + Drive share these). */
 export interface FileSyncFormSettings {
@@ -147,9 +151,11 @@ const FileSyncForm: React.FC<FileSyncFormProps> = ({
       if (!provider) {
         throw new FileSyncError('Sync backend is not available on this device', 'UNKNOWN');
       }
-      const store = createAppLocalStore({ appService, settings, envConfig });
+      const store = createAppLocalStore({ appService, settings, envConfig, remote: kind });
       const engine = new FileSyncEngine(provider, store);
-      const result = await engine.syncLibrary(currentLibrary, {
+      const { own, foreignHashes } = splitLibraryForBackend(currentLibrary, kind);
+      const result = await engine.syncLibrary(own, {
+        foreignHashes,
         strategy: stored.strategy === 'prompt' ? 'silent' : stored.strategy,
         syncBooks: stored.syncBooks ?? false,
         fullSync: stored.fullSync ?? false,

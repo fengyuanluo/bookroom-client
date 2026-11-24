@@ -27,7 +27,6 @@ import type { CustomTranslator } from '@/types/translation';
 const platform = vi.hoisted(() => ({
   supported: false,
   available: false,
-  premium: true,
   ios: false,
   android: false,
 }));
@@ -63,10 +62,6 @@ vi.mock('@/context/EnvContext', () => ({
 
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ token: 'token', user: null }),
-}));
-
-vi.mock('@/utils/access', () => ({
-  isCustomTranslatorAllowed: () => platform.premium,
 }));
 
 vi.mock('@/hooks/useFileSelector', () => ({
@@ -114,7 +109,6 @@ const getToggles = (container: HTMLElement) =>
 beforeEach(() => {
   platform.supported = false;
   platform.available = false;
-  platform.premium = true;
   platform.ios = false;
   platform.android = false;
   mocks.getLookupApps.mockReset().mockResolvedValue([]);
@@ -488,14 +482,6 @@ describe('CustomDictionaries — context dictionary (#5544)', () => {
     expect(getToggles(container)[0]!.disabled).toBe(true);
     expect(screen.getByText(/Add an OpenAI-compatible translator/)).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'AI Translator' })).toBeNull();
-  });
-
-  it('cannot be enabled without premium', () => {
-    platform.premium = false;
-    useCustomTranslatorStore.setState({ translators: [llm('a')], loaded: true });
-    seedSettings(contextSettings);
-    const { container } = render(<CustomDictionaries onBack={() => {}} />);
-    expect(getToggles(container)[0]!.disabled).toBe(true);
   });
 
   it('saves custom dictionary instructions and an output limit independently of translation', async () => {

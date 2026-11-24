@@ -18,21 +18,16 @@ const translate = (key: string) => key;
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => translate,
 }));
-vi.mock('@/services/transferManager', () => ({
-  transferManager: { queueUpload: vi.fn() },
-}));
 vi.mock('@/services/opds', () => ({
   syncSubscribedCatalogs: vi.fn(),
 }));
 
 import { syncSubscribedCatalogs } from '@/services/opds';
-import { transferManager } from '@/services/transferManager';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useOPDSSubscriptions } from '@/hooks/useOPDSSubscriptions';
 
 const mockedSync = vi.mocked(syncSubscribedCatalogs);
-const mockedQueueUpload = vi.mocked(transferManager.queueUpload);
 
 const makeBook = (hash: string, overrides: Partial<Book> = {}): Book =>
   ({
@@ -132,59 +127,5 @@ describe('useOPDSSubscriptions', () => {
     expect(useLibraryStore.getState().visibleLibrary.some((b) => b.hash === 'dead-book')).toBe(
       true,
     );
-  });
-
-  test('queues a cloud upload for a new book when Books sync is on', async () => {
-    vi.useFakeTimers();
-    try {
-      currentUser = { id: 'user-1' };
-      useLibraryStore.getState().setLibrary([]);
-      const book = makeBook('sub-book');
-      mockedSync.mockResolvedValue({ newBooks: [], totalNewBooks: 0, errors: [] });
-      mockedSync.mockImplementationOnce(async (_c, _a, _b, onBooksImported) => {
-        await onBooksImported?.([book]);
-        return { newBooks: [book], totalNewBooks: 1, errors: [] };
-      });
-
-      renderHook(() => useOPDSSubscriptions());
-      await settle();
-      await act(async () => {
-        vi.advanceTimersByTime(3000);
-      });
-
-      expect(mockedQueueUpload).toHaveBeenCalledWith(book);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test('does NOT queue a cloud upload when the Books sync category is off', async () => {
-    vi.useFakeTimers();
-    try {
-      currentUser = { id: 'user-1' };
-      useSettingsStore.setState({
-        settings: {
-          opdsCatalogs: [catalog],
-          syncCategories: { book: false },
-        } as unknown as SystemSettings,
-      });
-      useLibraryStore.getState().setLibrary([]);
-      const book = makeBook('sub-book');
-      mockedSync.mockResolvedValue({ newBooks: [], totalNewBooks: 0, errors: [] });
-      mockedSync.mockImplementationOnce(async (_c, _a, _b, onBooksImported) => {
-        await onBooksImported?.([book]);
-        return { newBooks: [book], totalNewBooks: 1, errors: [] };
-      });
-
-      renderHook(() => useOPDSSubscriptions());
-      await settle();
-      await act(async () => {
-        vi.advanceTimersByTime(3000);
-      });
-
-      expect(mockedQueueUpload).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

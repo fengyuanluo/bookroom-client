@@ -20,8 +20,6 @@ vi.mock('@tauri-apps/api/webviewWindow', () => {
 });
 
 vi.mock('@/services/environment', () => ({
-  isPWA: vi.fn().mockReturnValue(false),
-  isWebAppPlatform: vi.fn().mockReturnValue(false),
   isTauriAppPlatform: vi.fn().mockReturnValue(false),
 }));
 
@@ -37,15 +35,13 @@ import { redirect } from 'next/navigation';
 import { version as osVersion } from '@tauri-apps/plugin-os';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { isPWA, isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
+import { isTauriAppPlatform } from '@/services/environment';
 import {
   navigateToReader,
   navigateToLogin,
   navigateToProfile,
   navigateBackFromProfile,
   navigateToLibrary,
-  navigateToResetPassword,
-  navigateToUpdatePassword,
   redirectToLibrary,
   showReaderWindow,
   showLibraryWindow,
@@ -76,8 +72,6 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   // Reset default environment mock returns
-  vi.mocked(isWebAppPlatform).mockReturnValue(false);
-  vi.mocked(isPWA).mockReturnValue(false);
   vi.mocked(isTauriAppPlatform).mockReturnValue(false);
 
   // Reset getCurrentWindow default
@@ -111,29 +105,6 @@ describe('navigateToReader', () => {
     expect(url).toContain('ids=book1%2Bbook2');
   });
 
-  test('navigates to /reader/id for web platform (non-PWA)', () => {
-    vi.mocked(isWebAppPlatform).mockReturnValue(true);
-    vi.mocked(isPWA).mockReturnValue(false);
-
-    const router = mockRouter();
-    navigateToReader(router, ['book1']);
-
-    const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toBe('/reader/book1');
-  });
-
-  test('web platform with PWA uses query param format', () => {
-    vi.mocked(isWebAppPlatform).mockReturnValue(true);
-    vi.mocked(isPWA).mockReturnValue(true);
-
-    const router = mockRouter();
-    navigateToReader(router, ['book1']);
-
-    const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toContain('/reader?');
-    expect(url).toContain('ids=book1');
-  });
-
   test('joins multiple book IDs with + separator', () => {
     const router = mockRouter();
     navigateToReader(router, ['a', 'b', 'c']);
@@ -152,14 +123,11 @@ describe('navigateToReader', () => {
   });
 
   test('appends additional query params for web platform', () => {
-    vi.mocked(isWebAppPlatform).mockReturnValue(true);
-    vi.mocked(isPWA).mockReturnValue(false);
-
     const router = mockRouter();
     navigateToReader(router, ['book1'], 'view=scroll');
 
     const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toBe('/reader/book1?view=scroll');
+    expect(url).toBe('/reader?view=scroll&ids=book1');
   });
 
   test('passes navOptions through', () => {
@@ -303,64 +271,6 @@ describe('redirectToLibrary', () => {
   });
 });
 
-describe('navigateToResetPassword', () => {
-  test('navigates to /auth/recovery with redirect', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/settings', search: '' },
-      writable: true,
-    });
-
-    const router = mockRouter();
-    navigateToResetPassword(router);
-
-    const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toContain('/auth/recovery?redirect=');
-    expect(url).toContain(encodeURIComponent('/settings'));
-  });
-
-  test('uses / as redirect when on /auth', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/auth', search: '' },
-      writable: true,
-    });
-
-    const router = mockRouter();
-    navigateToResetPassword(router);
-
-    const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toBe('/auth/recovery?redirect=%2F');
-  });
-});
-
-describe('navigateToUpdatePassword', () => {
-  test('navigates to /auth/update with redirect', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/user', search: '?tab=security' },
-      writable: true,
-    });
-
-    const router = mockRouter();
-    navigateToUpdatePassword(router);
-
-    const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toContain('/auth/update?redirect=');
-    expect(url).toContain(encodeURIComponent('/user?tab=security'));
-  });
-
-  test('uses / as redirect when on /auth', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/auth', search: '' },
-      writable: true,
-    });
-
-    const router = mockRouter();
-    navigateToUpdatePassword(router);
-
-    const url = router.push.mock.calls[0]![0] as string;
-    expect(url).toBe('/auth/update?redirect=%2F');
-  });
-});
-
 describe('showReaderWindow', async () => {
   test('creates a new WebviewWindow with correct URL', async () => {
     const appService = makeAppService();
@@ -397,7 +307,7 @@ describe('showReaderWindow', async () => {
     const options = constructorCall[1]!;
     // The overlay title bar hides its title text natively, so the window is
     // named like every other platform's.
-    expect(options.title).toBe('Readest');
+    expect(options.title).toBe('BookRoom');
     expect(options.decorations).toBe(true);
     expect(options.titleBarStyle).toBe('overlay');
   });
@@ -408,7 +318,7 @@ describe('showReaderWindow', async () => {
 
     const constructorCall = vi.mocked(WebviewWindow).mock.calls[0]!;
     const options = constructorCall[1]!;
-    expect(options.title).toBe('Readest');
+    expect(options.title).toBe('BookRoom');
     expect(options.decorations).toBe(false);
     expect(options.transparent).toBe(true);
     expect(options.shadow).toBe(true);

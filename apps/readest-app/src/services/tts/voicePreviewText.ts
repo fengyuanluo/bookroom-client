@@ -1,4 +1,4 @@
-import { READEST_VOICE_PREVIEW_MAX_CHARS } from '@/services/constants';
+import { VOICE_PREVIEW_MAX_CHARS } from '@/services/constants';
 import { estimateSentenceSeconds } from './ttsDuration';
 
 // What a voice preview reads: whole sentences from the page being read, else a
@@ -99,7 +99,7 @@ export const PREVIEW_MIN_SECONDS = 5;
 
 const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, dd, dt, pre, td, th, div';
 // Enough text to find the sentences in; a chapter can be megabytes.
-const SCAN_CHARS = READEST_VOICE_PREVIEW_MAX_CHARS * 4;
+const SCAN_CHARS = VOICE_PREVIEW_MAX_CHARS * 4;
 
 const splitSentences = (text: string, lang: string): string[] => {
   if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
@@ -147,10 +147,10 @@ export const getPagePreviewText = (
   let seconds = 0;
   for (const sentence of splitSentences(textFromBlock(block), lang)) {
     const next = text ? `${text} ${sentence}` : sentence;
-    if (next.length > READEST_VOICE_PREVIEW_MAX_CHARS) {
+    if (next.length > VOICE_PREVIEW_MAX_CHARS) {
       if (text) break;
       // One sentence longer than a preview: cut it at a word boundary.
-      const cut = sentence.slice(0, READEST_VOICE_PREVIEW_MAX_CHARS);
+      const cut = sentence.slice(0, VOICE_PREVIEW_MAX_CHARS);
       const space = cut.lastIndexOf(' ');
       return space > 0 ? cut.slice(0, space) : cut;
     }

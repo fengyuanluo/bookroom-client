@@ -103,7 +103,7 @@ describe('EdgeSpeechTTS Tauri WebSocket transport (#5230)', () => {
   // helper would make `await startRequest(...)` adopt it — hanging the test
   // whenever the promise (correctly or not) never settles.
   const startRequest = async (text: string) => {
-    const tts = new EdgeSpeechTTS('wss');
+    const tts = new EdgeSpeechTTS();
     const promise = tts.createAudioData(makePayload(text));
     // Swallow rejection so an unawaited failure can't nuke the test run.
     promise.catch(() => {});

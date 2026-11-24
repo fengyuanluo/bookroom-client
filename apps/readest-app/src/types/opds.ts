@@ -53,6 +53,12 @@ export interface OPDSCatalog {
    * stamped ones, so a freshly added catalog still appears at the top.
    */
   sortOrder?: number;
+  /**
+   * The service that syncs progress and notes of the books downloaded from
+   * this catalog (ADR 0010), using that integration's account. Komga and
+   * Kavita serve KOReader Sync next to OPDS. Absent: the books stay local.
+   */
+  progressSync?: 'kosync' | 'grimmory' | 'bookorbit';
   /** Soft-delete timestamp; non-null entries are hidden from the UI. */
   deletedAt?: number;
   /** Reincarnation token (re-import after server tombstone). */

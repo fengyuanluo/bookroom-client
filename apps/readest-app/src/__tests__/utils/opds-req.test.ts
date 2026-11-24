@@ -6,10 +6,7 @@ vi.mock('@/services/environment', () => ({
   isWebAppPlatform: vi.fn(() => true),
   isTauriAppPlatform: vi.fn(() => false),
   getAPIBaseUrl: () => '/api',
-  getNodeAPIBaseUrl: () => '/node-api',
-  getBaseUrl: () => 'https://web.readest.com',
-  getNodeBaseUrl: () => 'https://node.readest.com',
-  isWebDevMode: () => true,
+  getBaseUrl: () => 'https://bookroom.example',
 }));
 
 // Mock tauriFetch to avoid import errors
@@ -138,10 +135,11 @@ describe('opdsReq', () => {
       expect(getProxiedURL(localPath)).toBe(localPath);
     });
 
-    it('should use node proxy for standardebooks domain', () => {
+    it('routes every HTTP upstream through the BookRoom proxy', () => {
       const url = 'https://standardebooks.org/opds/all';
       const proxied = getProxiedURL(url);
-      expect(proxied).toContain('/node-api/opds/proxy');
+      expect(proxied).toContain('/api/opds/proxy');
+      expect(proxied).toContain('url=' + encodeURIComponent(url));
     });
   });
 
@@ -192,12 +190,13 @@ describe('opdsReq', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const proxyUrl = fetchMock.mock.calls[0]![0] as string;
-      expect(new URL(proxyUrl, 'https://web.readest.com').searchParams.get('auth')).toBeNull();
+      expect(new URL(proxyUrl, 'https://bookroom.example').searchParams.get('auth')).toBeNull();
       const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<
         string,
         string
       >;
-      expect(headers['Authorization']).toBe(`Basic ${btoa('alice:s3cret')}`);
+      expect(headers['X-Upstream-Authorization']).toBe(`Basic ${btoa('alice:s3cret')}`);
+      expect(headers['Authorization']).toBeUndefined();
     });
 
     it('recovers when a Digest-only server rejects the preemptive Basic header with 400', async () => {
@@ -250,11 +249,11 @@ describe('opdsReq', () => {
       expect(fetchMock).toHaveBeenCalledTimes(3);
       const headersOf = (call: number) =>
         (fetchMock.mock.calls[call]![1] as RequestInit).headers as Record<string, string>;
-      expect(headersOf(1)['Authorization']).toBeUndefined();
-      expect(headersOf(2)['Authorization']).toMatch(/^Digest /);
+      expect(headersOf(1)['X-Upstream-Authorization']).toBeUndefined();
+      expect(headersOf(2)['X-Upstream-Authorization']).toMatch(/^Digest /);
       for (const [url] of fetchMock.mock.calls) {
         expect(
-          new URL(url as string, 'https://web.readest.com').searchParams.get('auth'),
+          new URL(url as string, 'https://bookroom.example').searchParams.get('auth'),
         ).toBeNull();
       }
       expect(res.status).toBe(200);

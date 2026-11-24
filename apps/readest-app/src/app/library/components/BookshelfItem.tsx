@@ -12,7 +12,6 @@ import { openExternalUrl } from '@/utils/open';
 import { getBookGoodreadsQuery, getGoodreadsSearchUrl } from '@/utils/goodreads';
 import { getOSPlatform } from '@/utils/misc';
 import { getBookPageCount, getSeriesIndex } from '@/utils/book';
-import { isAudiobook } from '@/utils/audiobook';
 import { throttle } from '@/utils/throttle';
 import { LibraryCoverFitType, LibraryViewModeType } from '@/types/settings';
 import { FILE_REVEAL_LABELS, FILE_REVEAL_PLATFORMS } from '@/utils/os';
@@ -244,27 +243,6 @@ const BookshelfItem: React.FC<BookshelfItemProps> = ({
           handleBookUpload(book);
         },
       },
-      share: {
-        text: _('Share Book'),
-        action: async () => {
-          // Bookshelf.tsx hosts the dialog; we dispatch and let it route
-          // unauthenticated users into the login flow first.
-          eventDispatcher.dispatch('show-share-dialog', { book });
-        },
-      },
-      offlineDownload: {
-        text: _('Download for Offline'),
-        action: async () => {
-          // The library page owns the premium gate (useAbsOfflineDownload).
-          eventDispatcher.dispatch('abs-offline-download', { book });
-        },
-      },
-      offlineRemove: {
-        text: _('Remove Offline Download'),
-        action: async () => {
-          eventDispatcher.dispatch('abs-offline-remove', { book });
-        },
-      },
       sendNearby: {
         text: _('Send to Nearby Device'),
         action: async () => {
@@ -281,7 +259,6 @@ const BookshelfItem: React.FC<BookshelfItemProps> = ({
     };
     return getBookContextMenuItemIds(book, {
       localSend: isTauriAppPlatform() && isLocalSendEnabled(),
-      absOffline: isTauriAppPlatform(),
     }).map((id) => itemOptions[id]);
   };
 
@@ -449,8 +426,7 @@ const BookshelfItem: React.FC<BookshelfItemProps> = ({
     showSeriesIndex && mode === 'grid' && 'format' in item
       ? getSeriesIndex(item.metadata?.seriesIndex)
       : undefined;
-  const pageCount =
-    showPageCount && 'format' in item && !isAudiobook(item) ? getBookPageCount(item) : undefined;
+  const pageCount = showPageCount && 'format' in item ? getBookPageCount(item) : undefined;
   const itemDataAttrs =
     'format' in item ? { 'data-book-hash': item.hash } : { 'data-group-name': item.name };
 

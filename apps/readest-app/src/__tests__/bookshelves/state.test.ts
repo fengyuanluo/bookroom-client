@@ -34,23 +34,13 @@ describe('bookshelf draft operations', () => {
     ).state;
     const stamp = clock.next();
     changed.rows['default']!.fields_jsonb['position'] = { v: 1024, t: stamp, s: 'test' };
-    delete changed.rows['audiobooks'];
-    delete changed.rows['podcasts'];
     const shelves = readBookshelves({ bookshelves: changed });
-    expect(shelves.map((s) => s.id)).toEqual([
-      'recent',
-      'audiobooks',
-      'podcasts',
-      'default',
-      'finished',
-    ]);
+    expect(shelves.map((s) => s.id)).toEqual(['recent', 'default', 'finished']);
     expect(shelves.find((s) => s.id === 'default')?.name).toBe('Main');
     changed.rows['default']!.fields_jsonb['position'] = { v: -1024, t: stamp, s: 'test' };
     expect(readBookshelves({ bookshelves: changed }).map((s) => s.id)).toEqual([
       'default',
       'recent',
-      'audiobooks',
-      'podcasts',
       'finished',
     ]);
   });
@@ -67,13 +57,7 @@ describe('bookshelf draft operations', () => {
     ]);
     const merged = mergeBookshelfStates(renamed.state, reordered.state);
     const shelves = readBookshelves({ bookshelves: merged });
-    expect(shelves.map((s) => s.id)).toEqual([
-      'default',
-      'recent',
-      'audiobooks',
-      'podcasts',
-      'finished',
-    ]);
+    expect(shelves.map((s) => s.id)).toEqual(['default', 'recent', 'finished']);
     expect(shelves[0]!.name).toBe('Main');
     expect(
       reordered.operations.every((row) => Object.keys(row.fields_jsonb).join() === 'position'),
@@ -81,8 +65,6 @@ describe('bookshelf draft operations', () => {
     expect(effectiveBookshelves(shelves).map((s) => s.id)).toEqual([
       'default',
       'recent',
-      'audiobooks',
-      'podcasts',
       'finished',
     ]);
     const disabled = effectiveBookshelves(shelves.map((s) => ({ ...s, enabled: false })));
@@ -91,8 +73,6 @@ describe('bookshelf draft operations', () => {
     const added = save(merged, shelves, [...shelves, createBookshelf('Last')]);
     expect(readBookshelves({ bookshelves: added.state }).map((s) => s.name)).toEqual([
       'Main',
-      '',
-      '',
       '',
       '',
       'Last',
@@ -115,8 +95,6 @@ describe('bookshelf draft operations', () => {
     );
     expect(readBookshelves({ bookshelves: local.state }).map((s) => s.name)).toEqual([
       'Remote',
-      '',
-      '',
       'Local',
       '',
     ]);
@@ -138,8 +116,6 @@ describe('bookshelf draft operations', () => {
       'Renamed',
       '',
       '',
-      '',
-      '',
     ]);
   });
   it('inserts between shelves whose concurrent positions tie without changing definitions', () => {
@@ -159,8 +135,6 @@ describe('bookshelf draft operations', () => {
       a.id,
       c.id,
       b.id,
-      'audiobooks',
-      'podcasts',
       'default',
       'finished',
     ]);
@@ -213,13 +187,7 @@ describe('bookshelf draft operations', () => {
     for (const state of [unknownField, unknownProperty, newerSchema]) {
       expect(mergeBookshelfStates(state).rows['default']).toBeUndefined();
       const shelves = readBookshelves({ bookshelves: state });
-      expect(shelves.map((s) => s.id)).toEqual([
-        'recent',
-        'audiobooks',
-        'podcasts',
-        'default',
-        'finished',
-      ]);
+      expect(shelves.map((s) => s.id)).toEqual(['recent', 'default', 'finished']);
       expect(shelves.find((s) => s.id === 'default')?.name).toBe('');
     }
   });

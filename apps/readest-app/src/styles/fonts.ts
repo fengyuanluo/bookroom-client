@@ -1,4 +1,3 @@
-import { getRuntimeConfig } from '@/services/runtimeConfig';
 import { isCJKEnv } from '@/utils/misc';
 import { getFilename } from '@/utils/path';
 import { md5Fingerprint } from '@/utils/md5';
@@ -46,10 +45,12 @@ const hostedCJKFonts = [
   'GuanKiapTsingKhai-T',
 ];
 
-const DEFAULT_FONT_BASE_URL = 'https://storage.readest.com/public/font/dist';
-
+// Readest's CDN answers CORS only for its own origins; a deployment on another
+// domain points NEXT_PUBLIC_FONT_BASE_URL at its own copy of the bundles.
 const getFontBaseUrl = () =>
-  (getRuntimeConfig()?.fontBaseUrl || DEFAULT_FONT_BASE_URL).replace(/\/+$/, '');
+  (
+    process.env['NEXT_PUBLIC_FONT_BASE_URL'] || 'https://storage.readest.com/public/font/dist'
+  ).replace(/\/+$/, '');
 
 const getAdditionalCJKFontLinks = () => {
   const fontBaseUrl = getFontBaseUrl();

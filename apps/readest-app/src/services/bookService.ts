@@ -32,7 +32,6 @@ import { getBaseFilename, getFilename, stripDuplicateMarker } from '@/utils/path
 import { BookDoc, DocumentLoader } from '@/libs/document';
 import { hasMediaOverlays } from '@/services/tts/mediaOverlay';
 import { getAudiobookDirectory, isAudiobookFilePath } from '@/services/audiobook/storage';
-import { isAudiobook } from '@/utils/audiobook';
 import { tryNativeParseEpub } from '@/utils/tauriEpubBridge';
 import { tryNativeParseMobi } from '@/utils/tauriMobiBridge';
 import { tryNativeParsePdf } from '@/utils/tauriPdfBridge';
@@ -41,7 +40,6 @@ import { DEFAULT_BOOK_SEARCH_CONFIG, DEFAULT_FIXED_LAYOUT_VIEW_SETTINGS } from '
 import { isContentURI, isValidURL, makeSafeFilename } from '@/utils/misc';
 import { deserializeConfig, serializeConfig, serializeRawConfig } from '@/utils/serializer';
 import { ClosableFile } from '@/utils/file';
-import { TxtToEpubConverter } from '@/utils/txt';
 import { svg2png } from '@/utils/svg';
 import { normalizeMetadataIsbn } from '@/utils/isbn';
 import { BookFileNotFoundError } from './errors';
@@ -385,8 +383,6 @@ const migratePairedAudiobook = async (
   targetHash: string,
 ): Promise<PairedAudiobook> => {
   if (sourceHash === targetHash) return association;
-  // Streamed from a server: no files under the old hash to carry over.
-  if (association.source) return association;
 
   const targetDirectory = getAudiobookDirectory(targetHash);
   await fs.createDir(targetDirectory, 'Books', true);
@@ -559,6 +555,7 @@ export async function importBook(
     inPlace = false,
     lookupIndex,
     osPlatform,
+    remote = 'local',
   } = options;
   // In-place is only meaningful for formats the reader can parse natively.
   // DOCX/RTF are converted to EPUB and must be persisted into Books/ — the
@@ -569,9 +566,9 @@ export async function importBook(
 
   let loadedBook: BookDoc | undefined;
   let fileobj: File | undefined;
-  // TXT conversion replaces `fileobj` with a plain in-memory EPUB File. Track
-  // the opened RemoteFile/NativeFile so we can close it right after convert
-  // (and still in outer `finally` for non-TXT ClosableFile paths).
+  // DOCX/RTF conversion replaces `fileobj` with a plain in-memory EPUB File.
+  // Track the opened RemoteFile/NativeFile so we can close it right after
+  // convert (and still in outer `finally` for unconverted ClosableFile paths).
   let openedSource: ClosableFile | undefined;
   let rollbackBook: Book | undefined;
   let rollbackSnapshot: Book | undefined;
@@ -614,28 +611,12 @@ export async function importBook(
         if (typeof maybeClosable.close === 'function') {
           openedSource = maybeClosable;
         }
-        if (/\.txt$/i.test(filename)) {
-          const txt2epub = new TxtToEpubConverter();
-          try {
-            ({ file: fileobj } = await txt2epub.convert({ file: fileobj }));
-          } finally {
-            // Convert consumes the source; release RemoteFile/NativeFile
-            // immediately so DocumentLoader / cover / write do not keep the
-            // path handle pinned. Outer `finally` stays an idempotent net.
-            if (openedSource?.close) {
-              try {
-                await openedSource.close();
-              } catch {}
-            }
-            openedSource = undefined;
-          }
-        }
-        // DOCX/RTF have no native reader either: convert to EPUB up front so
+        // DOCX/RTF have no native reader: convert to EPUB up front so
         // everything downstream (native parse, hash, metadata, storage, sync)
-        // sees an ordinary EPUB import. Same consume-the-source contract as
-        // the TXT conversion above; the conversion stays silent — no UI, no
-        // new strings — consistent with how the Send inbox already converts
-        // documents through the same worker.
+        // sees an ordinary EPUB import. TXT is stored as-is instead and
+        // converted on every open (`DocumentLoader`). The conversion stays
+        // silent — no UI, no new strings — consistent with how the Send inbox
+        // already converts documents through the same worker.
         if (/\.(docx|rtf)$/i.test(filename)) {
           // Fall back to a managed copy: the reader can only open the
           // converted EPUB, so an in-place binding to the source document
@@ -695,9 +676,9 @@ export async function importBook(
         // tests.
         let nativeBookDoc: BookDoc | undefined;
         let nativeFormat: BookFormat | undefined;
-        // TXT/DOCX/RTF fileobj was converted in memory above, so the bytes at
+        // DOCX/RTF fileobj was converted in memory above, so the bytes at
         // `path` are still the original document — don't hand those to the
-        // path-based native parsers.
+        // path-based native parsers. TXT has no native parser.
         if (typeof file === 'string' && !/(\.txt|\.docx|\.rtf)$/i.test(filename)) {
           const nativePdf = await tryNativeParsePdf(file, fileobj, osPlatform);
           if (nativePdf) {
@@ -758,10 +739,16 @@ export async function importBook(
     if (existingBook) {
       rememberBookState(existingBook);
       if (!transient) {
-        // A deleted row was left out of the metadata indexes when they were
-        // built; add it back so later imports in this batch can match it.
-        if (existingBook.deletedAt && lookupIndex) {
-          indexBookKeys(lookupIndex, existingBook, metaHash, stableHash);
+        if (existingBook.deletedAt) {
+          // A deleted row was left out of the metadata indexes when they were
+          // built; add it back so later imports in this batch can match it.
+          if (lookupIndex) indexBookKeys(lookupIndex, existingBook, metaHash, stableHash);
+          // A book added again after deletion joins the remote it is added to;
+          // a cloud copy on its former remote is no copy on the new one.
+          if ((existingBook.remote ?? 'local') !== remote) {
+            existingBook.remote = remote;
+            existingBook.uploadedAt = null;
+          }
         }
         existingBook.deletedAt = null;
         existingBook.fileSyncDeletionRequestedAt = null;
@@ -829,6 +816,7 @@ export async function importBook(
       metadata: loadedBook.metadata,
       createdAt: existingBook ? existingBook.createdAt : Date.now(),
       uploadedAt: existingBook ? existingBook.uploadedAt : null,
+      remote: existingBook ? existingBook.remote : remote,
       deletedAt: transient ? Date.now() : null,
       downloadedAt: Date.now(),
       updatedAt: Date.now(),
@@ -916,7 +904,7 @@ export async function importBook(
       (!(await fs.exists(bookFilename, 'Books')) ||
         (overwrite && file !== `${await fs.getPrefix('Books')}/${bookFilename}`));
     if (willWriteBookFile && fileobj) {
-      if (/(\.txt|\.docx|\.rtf)$/i.test(filename)) {
+      if (/\.(docx|rtf)$/i.test(filename)) {
         // The import converted fileobj in memory; the file at `path` still
         // holds the original document, so write the EPUB bytes — never copy
         // the source path into Books.
@@ -1164,9 +1152,9 @@ export async function importBook(
     } catch (error) {
       console.warn('Error destroying book document:', error);
     }
-    // Prefer `openedSource` only: after TXT convert we clear it once the source
-    // is released early. Falling back to `fileobj` would double-close when
-    // convert failed and `fileobj` is still the original ClosableFile.
+    // Prefer `openedSource` only: after DOCX/RTF convert we clear it once the
+    // source is released early. Falling back to `fileobj` would double-close
+    // when convert failed and `fileobj` is still the original ClosableFile.
     if (openedSource?.close) {
       try {
         await openedSource.close();
@@ -1178,8 +1166,6 @@ export async function importBook(
 // --- Book Content & Config ---
 
 export async function isBookAvailable(fs: FileSystem, book: Book): Promise<boolean> {
-  // ABS books stream from the server and have no local/cloud file to resolve.
-  if (isAudiobook(book)) return true;
   return (await resolveBookContentSource(fs, book)).kind !== 'missing';
 }
 
@@ -1208,8 +1194,7 @@ async function openBookFileContent(
   if (!isBookFileContentSource(source)) {
     throw new BookFileNotFoundError();
   }
-  const fetcher = source.kind === 'url' ? source.fetcher : undefined;
-  return { source, file: await fs.openFile(source.path, source.base, undefined, fetcher) };
+  return { source, file: await fs.openFile(source.path, source.base) };
 }
 
 export async function loadBookContent(fs: FileSystem, book: Book): Promise<BookContent> {

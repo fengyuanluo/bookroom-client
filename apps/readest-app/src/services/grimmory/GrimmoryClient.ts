@@ -5,7 +5,8 @@ import { normalizeCustomHeaders } from '@/utils/customHeaders';
 import { stubTranslation as _ } from '@/utils/misc';
 import { isLanAddress } from '@/utils/network';
 import { allowsSelfSignedCert, tlsFetch } from '@/utils/tls';
-import { getAPIBaseUrl, isTauriAppPlatform } from '../environment';
+import { isTauriAppPlatform } from '../environment';
+import { postToBookRoomProxy } from '../bookroom/proxy';
 import type {
   GrimmoryAnnotation,
   GrimmoryAnnotationCreate,
@@ -109,11 +110,7 @@ export class GrimmoryClient {
       headers,
       body,
     };
-    return await fetch(`${getAPIBaseUrl()}/grimmory`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    return await postToBookRoomProxy('/grimmory', payload);
   }
 
   private async login(): Promise<string> {

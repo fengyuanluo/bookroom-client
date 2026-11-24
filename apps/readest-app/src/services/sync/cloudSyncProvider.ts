@@ -1,19 +1,17 @@
+import type { Book } from '@/types/book';
 import type { SystemSettings } from '@/types/settings';
-import type { UserPlan } from '@/types/quota';
-import { isCloudSyncAllowed } from '@/utils/access';
 import type { FileSyncBackendKind } from '@/services/sync/file/providerRegistry';
+import { bookRemote, isOnBookRoom } from '@/services/remote';
 
 /**
  * The cloud sync provider kind for library data (book files, book rows,
- * progress, notes). 'readest' is the native Readest Cloud; the others are
- * the third-party file-sync backends.
+ * progress, notes). 'readest' is BookRoom, which speaks the Readest cloud
+ * protocol; the others are the third-party file-sync backends.
  *
- * Providers are INDEPENDENT (#5062): any subset may sync the library at once,
- * including none. Readest Cloud's flag has a derived default so an absent value
- * reproduces the old exclusive behaviour; every third-party backend is a plain
- * per-device `enabled` flag. Account-level data (settings replicas, reading
- * stats, dictionaries/fonts, translations) always syncs via Readest Cloud while
- * signed in, regardless of this selection.
+ * Any subset of providers may be enabled, but each book syncs only to the
+ * remote it belongs to (ADR 0010, `resolveBookSyncGate`). Account-level data
+ * (settings replicas, reading stats, dictionaries/fonts, translations) always
+ * syncs via BookRoom while signed in.
  */
 export type CloudSyncProviderKind = 'readest' | FileSyncBackendKind;
 
@@ -41,7 +39,7 @@ export const cloudProviderDisplayName = (kind: CloudSyncProviderKind): string =>
  * The third-party backends the user has switched on, in a STABLE order that
  * every loop, list, and sync pass in the app relies on.
  */
-export const getEnabledFileSyncBackends = (
+export const getActiveFileSyncBackends = (
   settings: SystemSettings | null | undefined,
 ): FileSyncBackendKind[] => {
   const enabled: FileSyncBackendKind[] = [];
@@ -53,100 +51,65 @@ export const getEnabledFileSyncBackends = (
   return enabled;
 };
 
-/** Any third-party file-sync backend switched on. */
-export const hasAnyThirdPartyEnabled = (settings: SystemSettings | null | undefined): boolean =>
-  getEnabledFileSyncBackends(settings).length > 0;
-
 /**
- * Whether Readest Cloud syncs the library channels on this device.
- *
- * The `??` is load-bearing: an absent `readestCloud.enabled` reproduces the
- * pre-#5062 exclusive derivation (Readest Cloud owned the library exactly when
- * no third-party provider was enabled), so upgrading users need no migration
- * and disconnecting the last third-party provider still falls back to Readest
- * Cloud. Once the user touches a Cloud Sync checkbox the flag is explicit and
- * wins.
+ * Whether BookRoom syncs the library channels on this device. On unless the
+ * user unticks it: books belong to one remote each (ADR 0010), so enabling a
+ * file-sync backend no longer takes the library away from BookRoom.
  */
 export const isReadestCloudEnabled = (settings: SystemSettings | null | undefined): boolean =>
-  settings?.readestCloud?.enabled ?? !hasAnyThirdPartyEnabled(settings);
+  settings?.readestCloud?.enabled ?? true;
 
 /** Every provider syncing the library on this device, Readest Cloud first. */
 export const getCloudSyncProviders = (
   settings: SystemSettings | null | undefined,
 ): CloudSyncProviderKind[] => [
   ...(isReadestCloudEnabled(settings) ? (['readest'] as const) : []),
-  ...getEnabledFileSyncBackends(settings),
+  ...getActiveFileSyncBackends(settings),
 ];
 
 /** Comma-joined product names, for the "Synced via {{provider}}" copy. */
 export const cloudProvidersDisplayName = (kinds: CloudSyncProviderKind[]): string =>
   kinds.map(cloudProviderDisplayName).join(', ');
 
-/**
- * `isCloudSyncAllowed` needs the UserPlan, which comes from the async
- * auth JWT — non-React modules (transferManager, syncCategories) cannot
- * resolve it synchronously. The plan-resolution flow (auth / quota
- * refresh) writes the latest plan here; gate checks read it back.
- * Defaults to 'free', the most restrictive plan, so a gate evaluated
- * before the first auth resolution can only be too cautious, never too
- * permissive.
- */
-let cachedUserPlan: UserPlan = 'free';
-
-export const setCachedUserPlan = (plan: UserPlan | undefined): void => {
-  cachedUserPlan = plan ?? 'free';
-};
-
-export const getCachedUserPlan = (): UserPlan => cachedUserPlan;
-
-/**
- * Cached alongside the plan for the same reason: premium access is now the
- * plan OR an outright Full Customization purchase, and a storage-only buyer
- * reports the `purchase` plan without being entitled. Defaults to false, the
- * restrictive side.
- */
-let cachedCustomizationPurchased = false;
-
-export const setCachedCustomizationPurchased = (purchased: boolean | undefined): void => {
-  cachedCustomizationPurchased = purchased ?? false;
-};
-
-export const getCachedCustomizationPurchased = (): boolean => cachedCustomizationPurchased;
-
 export interface CloudSyncGate {
   /** Readest Cloud syncs the library channels (rows, progress, notes, files). */
   readest: boolean;
   /** Third-party backends the user switched on, in the fixed webdav/gdrive/s3/onedrive/icloud order. */
   backends: FileSyncBackendKind[];
-  /**
-   * True when third-party backends are switched on but the plan does not allow
-   * cloud sync. Paused means paused: a paused backend does not sync. Readest
-   * Cloud is unaffected — if it is on it keeps running, because the user asked
-   * for it, not as a silent fallback (#4959).
-   */
-  paused: boolean;
 }
 
 export const resolveCloudSyncGate = (
   settings: SystemSettings | null | undefined,
-  plan: UserPlan = cachedUserPlan,
-  customizationPurchased: boolean = cachedCustomizationPurchased,
-): CloudSyncGate => {
-  const backends = getEnabledFileSyncBackends(settings);
-  return {
-    readest: isReadestCloudEnabled(settings),
-    backends,
-    paused: backends.length > 0 && !isCloudSyncAllowed(plan, customizationPurchased),
-  };
-};
+): CloudSyncGate => ({
+  readest: isReadestCloudEnabled(settings),
+  backends: getActiveFileSyncBackends(settings),
+});
 
-/** The backends that may actually run right now (empty when paused). */
-export const getActiveFileSyncBackends = (
+/**
+ * The providers that may carry this book's row, file, progress and notes: only
+ * the remote it belongs to, and only while that remote is enabled here.
+ */
+export const resolveBookSyncGate = (
   settings: SystemSettings | null | undefined,
-  plan?: UserPlan,
-): FileSyncBackendKind[] => {
-  const gate = resolveCloudSyncGate(settings, plan);
-  return gate.paused ? [] : gate.backends;
+  book: Pick<Book, 'remote'>,
+): CloudSyncGate => ({
+  readest: isReadestCloudEnabled(settings) && isOnBookRoom(book),
+  backends: getActiveFileSyncBackends(settings).filter((kind) => kind === bookRemote(book)),
+});
+
+/** Whether BookRoom storage and rows carry this book. */
+export const syncsBookToBookRoom = (
+  settings: SystemSettings | null | undefined,
+  book: Pick<Book, 'remote'>,
+): boolean => resolveBookSyncGate(settings, book).readest;
+
+/** Whether the remote this book belongs to can hold its file right now. */
+export const hasBookSyncTarget = (
+  settings: SystemSettings | null | undefined,
+  book: Pick<Book, 'remote'>,
+): boolean => {
+  const gate = resolveBookSyncGate(settings, book);
+  return gate.readest || gate.backends.length > 0;
 };
 
 /**
@@ -160,7 +123,7 @@ export const getActiveFileSyncBackends = (
  */
 export const applySyncBooksAutoEnable = (settings: SystemSettings): boolean => {
   let changed = false;
-  for (const kind of getEnabledFileSyncBackends(settings)) {
+  for (const kind of getActiveFileSyncBackends(settings)) {
     // A switch (rather than a generically-keyed write) keeps each branch's
     // settings slice type intact; `settings[key] = { ...slice, syncBooks }`
     // does not typecheck when `key` is a union of literal keys.
@@ -199,15 +162,3 @@ export const applySyncBooksAutoEnable = (settings: SystemSettings): boolean => {
   }
   return changed;
 };
-
-/**
- * Whether Readest Cloud storage may be written to (book file uploads and the
- * native book/progress/note rows). Now simply "is Readest Cloud switched on" —
- * it no longer means "and nothing else is". A user can mirror to Drive AND keep
- * Readest Cloud; whether book *files* also go to Readest is still governed
- * separately by the Manage Sync "book" toggle and the transfer queue.
- */
-export const isReadestCloudStorageActive = (
-  settings: SystemSettings | null | undefined,
-  _plan?: UserPlan,
-): boolean => isReadestCloudEnabled(settings);

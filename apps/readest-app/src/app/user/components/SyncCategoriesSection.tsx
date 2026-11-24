@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useEnsureSettingsLoaded } from '@/hooks/useEnsureSettingsLoaded';
 import {
   isReadestCloudEnabled,
-  getEnabledFileSyncBackends,
+  getActiveFileSyncBackends,
   cloudProvidersDisplayName,
 } from '@/services/sync/cloudSyncProvider';
 import {
@@ -57,10 +57,6 @@ const useCategoryCopy = (): Record<SyncCategory, CategoryCopy> => {
       title: _('OPDS catalogs'),
       description: _('Saved catalog URLs and (encrypted) credentials'),
     },
-    abs_server: {
-      title: _('Audiobookshelf Servers'),
-      description: _('Saved server URLs and (encrypted) credentials'),
-    },
     custom_translator: {
       title: _('Translators'),
       description: _('Custom translation providers, prompts, and (encrypted) API keys'),
@@ -99,7 +95,7 @@ export function SyncCategoriesSection() {
   const hydrated = useEnsureSettingsLoaded();
   const copy = useCategoryCopy();
   const readestEnabled = isReadestCloudEnabled(settings);
-  const backends = getEnabledFileSyncBackends(settings);
+  const backends = getActiveFileSyncBackends(settings);
   const cloudProviderName = cloudProvidersDisplayName(backends);
 
   // A refreshed /user renders before the store is hydrated, where every

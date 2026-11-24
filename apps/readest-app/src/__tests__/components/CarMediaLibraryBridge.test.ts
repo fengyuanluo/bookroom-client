@@ -30,7 +30,6 @@ describe('CarMediaLibraryBridge', () => {
         }),
         book({ hash: 'cloud', title: 'Cloud only', updatedAt: 30, downloadedAt: null }),
         book({ hash: 'deleted', title: 'Deleted', updatedAt: 40, deletedAt: 40 }),
-        book({ hash: 'audio', title: 'Audiobook', format: 'ABS', updatedAt: 50 }),
       ],
       new Map([
         ['newer', { coverHash: 'cover-v2', url: 'asset://newer-cover' }],
@@ -39,15 +38,6 @@ describe('CarMediaLibraryBridge', () => {
     );
 
     expect(books).toEqual([
-      {
-        hash: 'audio',
-        title: 'Audiobook',
-        author: 'Author',
-        isAudiobook: true,
-        format: 'ABS',
-        coverHash: null,
-        artworkReady: false,
-      },
       {
         hash: 'newer',
         title: 'Newer',
@@ -84,10 +74,9 @@ describe('CarMediaLibraryBridge', () => {
     const books = getCarMediaLibraryBooks([
       book({ hash: 'filepath', title: 'On disk', updatedAt: 30, filePath: '/books/a.epub' }),
       book({ hash: 'url', title: 'Streamed', updatedAt: 20, url: 'https://example.com/a.epub' }),
-      book({ hash: 'abs', title: 'Audiobookshelf', format: 'ABS', updatedAt: 10 }),
     ]);
 
-    expect(books.map((b) => b.hash)).toEqual(['filepath', 'url', 'abs']);
+    expect(books.map((b) => b.hash)).toEqual(['filepath', 'url']);
   });
 
   // The browse tree is readable by any client that binds the exported

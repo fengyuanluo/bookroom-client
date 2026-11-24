@@ -4,7 +4,6 @@ import type { ClosableFile } from '@/utils/file';
 
 const mockOpen = vi.hoisted(() => vi.fn());
 const mockPartialMD5 = vi.hoisted(() => vi.fn());
-const mockConvert = vi.hoisted(() => vi.fn());
 
 vi.mock('@/utils/md5', async () => {
   const actual = await vi.importActual<typeof import('@/utils/md5')>('@/utils/md5');
@@ -21,11 +20,6 @@ vi.mock('@/libs/document', async () => {
   return { ...actual, DocumentLoader: MockDocumentLoader };
 });
 
-vi.mock('@/utils/txt', () => ({
-  TxtToEpubConverter: class {
-    convert = mockConvert;
-  },
-}));
 vi.mock('@/utils/svg', () => ({ svg2png: vi.fn() }));
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }));
 vi.mock('@/libs/storage', () => ({
@@ -101,10 +95,11 @@ const TEST_METADATA = {
 };
 
 /**
- * Folder/desktop TXT import opens a ClosableFile, then replaces `fileobj` with
- * the converted EPUB File. The finally block must still close the *source*
- * handle — otherwise every TXT import leaks the opened RemoteFile/NativeFile
- * (same cleanup contract as #5387's destroy/close finally).
+ * Folder/desktop TXT import opens a ClosableFile and stores the source TXT
+ * as-is (ADR 0011) — conversion happens on every open, in `DocumentLoader`.
+ * The finally block must still close the *source* handle, otherwise every TXT
+ * import leaks the opened RemoteFile/NativeFile (same cleanup contract as
+ * #5387's destroy/close finally).
  */
 describe('importBook TXT ClosableFile lifecycle', () => {
   let service: TestAppService;
@@ -127,6 +122,7 @@ describe('importBook TXT ClosableFile lifecycle', () => {
     fs.exists.mockResolvedValue(false);
     fs.createDir.mockResolvedValue(undefined);
     fs.writeFile.mockResolvedValue(undefined);
+    fs.copyFile.mockResolvedValue(undefined);
     fs.removeDir.mockResolvedValue(undefined);
     fs.readFile.mockResolvedValue('{}');
     mockPartialMD5.mockResolvedValue('hash-txt-abc');
@@ -137,18 +133,11 @@ describe('importBook TXT ClosableFile lifecycle', () => {
         getCover: vi.fn().mockResolvedValue(null),
         destroy: vi.fn(),
       },
-      format: 'EPUB',
-    });
-
-    mockConvert.mockResolvedValue({
-      file: new File(['epub-bytes'], 'novel.epub', { type: 'application/epub+zip' }),
-      bookTitle: 'novel',
-      chapterCount: 1,
-      language: 'en',
+      format: 'TXT',
     });
   });
 
-  it('closes the source ClosableFile after a successful TXT import from a path', async () => {
+  it('stores the original TXT and closes the source ClosableFile', async () => {
     const source = makeSourceTxt();
     service.getFs().openFile.mockResolvedValue(source);
     const books: Book[] = [];
@@ -156,42 +145,19 @@ describe('importBook TXT ClosableFile lifecycle', () => {
     const result = await service.importBook('/library/novel.txt', books);
 
     expect(result).not.toBeNull();
-    expect(mockConvert).toHaveBeenCalledTimes(1);
-    expect(mockClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('closes the source ClosableFile before DocumentLoader.open runs', async () => {
-    const source = makeSourceTxt();
-    service.getFs().openFile.mockResolvedValue(source);
-    mockOpen.mockImplementation(async () => {
-      expect(mockClose).toHaveBeenCalledTimes(1);
-      return {
-        book: {
-          metadata: TEST_METADATA,
-          getCover: vi.fn().mockResolvedValue(null),
-          destroy: vi.fn(),
-        },
-        format: 'EPUB',
-      };
-    });
-
-    await service.importBook('/library/novel.txt', []);
-    expect(mockOpen).toHaveBeenCalledTimes(1);
-    expect(mockClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('closes the source ClosableFile when TXT conversion fails', async () => {
-    const source = makeSourceTxt();
-    service.getFs().openFile.mockResolvedValue(source);
-    mockConvert.mockRejectedValue(new Error('No chapters detected.'));
-
-    await expect(service.importBook('/library/novel.txt', [])).rejects.toThrow();
+    // ADR 0011: the TXT is kept as-is, not converted at import time.
+    expect(service.getFs().copyFile).toHaveBeenCalledWith(
+      '/library/novel.txt',
+      'None',
+      expect.stringMatching(/\.txt$/),
+      'Books',
+    );
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
   // Issue #5959: once the pickers stop dropping "novel.txt (1)", the importer
   // has to recognise it as a TXT too, or it reaches the document loader as an
   // unknown binary and fails with "Unsupported or corrupted book file".
-  it('converts a TXT whose duplicate-download marker landed after the extension', async () => {
+  it('accepts a TXT whose duplicate-download marker landed after the extension', async () => {
     // `fs.openFile` reports the on-disk name, marker and all.
     const source = makeSourceTxt('novel.txt (1)');
     service.getFs().openFile.mockResolvedValue(source);
@@ -199,6 +165,8 @@ describe('importBook TXT ClosableFile lifecycle', () => {
     const result = await service.importBook('/library/novel.txt (1)', []);
 
     expect(result).not.toBeNull();
-    expect(mockConvert).toHaveBeenCalledTimes(1);
+    expect(result!.originalFilename).toBe('novel.txt (1)');
+    expect(result!.title).not.toContain('.txt');
+    expect(mockClose).toHaveBeenCalledTimes(1);
   });
 });

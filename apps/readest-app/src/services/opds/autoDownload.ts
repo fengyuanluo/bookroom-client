@@ -3,12 +3,19 @@ import type { AppService } from '@/types/system';
 import type { OPDSCatalog } from '@/types/opds';
 import { downloadFile } from '@/libs/storage';
 import { getFileExtFromMimeType } from '@/libs/document';
-import { needsProxy, getProxiedURL, probeAuth, probeFilename } from '@/app/opds/utils/opdsReq';
+import {
+  needsProxy,
+  getProxiedURL,
+  probeAuth,
+  probeFilename,
+  upstreamAuthHeader,
+} from '@/app/opds/utils/opdsReq';
 import { resolveURL, parseMediaType, getFileExtFromPath } from '@/app/opds/utils/opdsUtils';
 import { normalizeCustomHeaders } from '@/utils/customHeaders';
 import { allowsSelfSignedCertAt } from '@/utils/tls';
 import { recordFlow } from '@/services/sync/dataFlow/log';
 import { READEST_OPDS_USER_AGENT } from '@/services/constants';
+import { opdsRemote } from '@/services/remote';
 import { applyOPDSCover } from './cover';
 import { applyOPDSMetadata } from './metadata';
 import { checkFeedForNewItems } from './feedChecker';
@@ -94,7 +101,7 @@ async function downloadAndImport(
       allowSelfSignedCert,
     );
     if (authHeader) {
-      headers['Authorization'] = authHeader;
+      headers[upstreamAuthHeader(useProxy)] = authHeader;
     }
   }
 
@@ -137,7 +144,8 @@ async function downloadAndImport(
     dstFilePath = newFilePath;
   }
 
-  const book = await appService.importBook(dstFilePath, books);
+  // The book belongs to its catalog (ADR 0010).
+  const book = await appService.importBook(dstFilePath, books, { remote: opdsRemote(catalog) });
   if (!book) throw new Error(`importBook returned null for ${item.title}`);
   // The catalog's curated metadata wins over the file's embedded record
   // (#5270). Retry items rebuilt from FailedEntry carry none and skip.

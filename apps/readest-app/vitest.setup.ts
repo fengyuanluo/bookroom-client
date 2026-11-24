@@ -85,3 +85,16 @@ if (typeof globalThis.fetch === 'function') {
       ? Promise.resolve(Response.json({ error: 'NOT_CONFIGURED' }, { status: 503 }))
       : realFetch(input, init);
 }
+
+// Node's Response (undici) returns a Blob from its own realm, which jsdom's
+// Blob/File reject and stringify to "[object Blob]". zip.js's BlobWriter is
+// built on `new Response(...).blob()`, so without this every unzipped entry
+// (EPUB covers, CBZ pages) would arrive corrupted in tests. Re-wrap it in the
+// jsdom Blob the rest of the environment hands to File.
+if (typeof Response !== 'undefined' && typeof Blob !== 'undefined') {
+  const nodeResponseBlob = Response.prototype.blob;
+  Response.prototype.blob = async function (this: Response) {
+    const blob = await nodeResponseBlob.call(this);
+    return blob instanceof Blob ? blob : new Blob([await blob.arrayBuffer()], { type: blob.type });
+  };
+}

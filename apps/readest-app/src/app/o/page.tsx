@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { IoAlertCircleOutline, IoBookOutline, IoOpenOutline } from 'react-icons/io5';
-import { DOWNLOAD_READEST_URL, READEST_WEB_BASE_URL } from '@/services/constants';
+import { BOOKROOM_SOURCE_URL } from '@/services/constants';
 import { useTranslation } from '@/hooks/useTranslation';
 import { buildAnnotationAppUrl } from '@/utils/deeplink';
 import { BrandHeader } from '@/components/landing/BrandHeader';
@@ -25,7 +25,7 @@ const detectPlatform = (): Platform => {
   return 'desktop';
 };
 
-const ANDROID_PACKAGE = 'com.bilingify.readest';
+const ANDROID_PACKAGE = 'com.bookroom.reader';
 const FALLBACK_TIMEOUT_MS = 1500;
 const DESKTOP_FALLBACK_DELAY_MS = 1000;
 
@@ -34,9 +34,11 @@ const buildIntentUrl = (path: string, fallbackUrl: string) => {
   return `intent://${cleanPath}#Intent;scheme=readest;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
 };
 
+// The reader page of the web build this landing page is served from.
 const buildWebReaderUrl = (bookHash: string, cfi: string | null): string => {
-  const query = cfi ? `?${new URLSearchParams({ cfi }).toString()}` : '';
-  return `/reader/${bookHash}${query}`;
+  const params = new URLSearchParams({ ids: bookHash });
+  if (cfi) params.set('cfi', cfi);
+  return `/reader?${params.toString()}`;
 };
 
 const OpenAnnotationLanding = () => {
@@ -69,7 +71,7 @@ const OpenAnnotationLanding = () => {
     const path = `book/${bookHash}/annotation/${noteId}${cfi ? `?cfi=${encodeURIComponent(cfi)}` : ''}`;
 
     if (platform === 'android-chromium') {
-      const absoluteFallback = `${READEST_WEB_BASE_URL}${webReaderUrl}`;
+      const absoluteFallback = `${window.location.origin}${webReaderUrl}`;
       window.location.replace(buildIntentUrl(path, absoluteFallback));
       return;
     }
@@ -129,8 +131,8 @@ const OpenAnnotationLanding = () => {
                 'The annotation link is missing required information. The original link may have been truncated.',
               )}
             </p>
-            <a href='https://readest.com' className='btn btn-ghost btn-block mt-6' rel='noopener'>
-              {_('Go to Readest')}
+            <a href='/library' className='btn btn-ghost btn-block mt-6' rel='noopener'>
+              {_('Your Library')}
             </a>
           </div>
         </Card>
@@ -146,13 +148,13 @@ const OpenAnnotationLanding = () => {
     <main className='bg-base-200 flex min-h-dvh flex-col items-center justify-center p-4 sm:p-8'>
       <Card>
         <BrandHeader
-          title={_('Open in Readest')}
+          title={_('Open in BookRoom')}
           subtitle={
             showManualOpen
-              ? _("If Readest didn't open automatically, choose an option below:")
+              ? _("If BookRoom didn't open automatically, choose an option below:")
               : _('Continue reading where you left off.')
           }
-          alt={_('Readest logo')}
+          alt={_('BookRoom logo')}
         />
 
         {/* Loading state — visible until the desktop timeout fires (or always
@@ -164,7 +166,7 @@ const OpenAnnotationLanding = () => {
             aria-live='polite'
           >
             <span className='loading loading-dots loading-md text-primary' aria-hidden='true' />
-            <span className='text-base-content/70 text-sm'>{_('Opening Readest...')}</span>
+            <span className='text-base-content/70 text-sm'>{_('Opening BookRoom...')}</span>
           </div>
         )}
 
@@ -177,16 +179,16 @@ const OpenAnnotationLanding = () => {
         >
           <a href={appUrl} className='btn btn-primary btn-block' rel='noopener'>
             <IoBookOutline className='h-5 w-5' aria-hidden='true' />
-            {_('Open in Readest app')}
+            {_('Open in BookRoom app')}
           </a>
           <a href={webReaderHref} className='btn btn-ghost btn-block' rel='noopener'>
             <IoOpenOutline className='h-5 w-5' aria-hidden='true' />
             {_('Continue in browser')}
           </a>
           <p className='text-base-content/60 mt-3 text-center text-xs'>
-            {_("Don't have Readest?")}{' '}
+            {_("Don't have BookRoom?")}{' '}
             <a
-              href={DOWNLOAD_READEST_URL}
+              href={`${BOOKROOM_SOURCE_URL}/releases`}
               target='_blank'
               rel='noopener'
               className='text-primary font-medium hover:underline'

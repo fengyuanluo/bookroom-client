@@ -13,7 +13,6 @@ vi.mock('@/libs/edgeTTS', () => ({
       );
     createAudioData = vi.fn().mockRejectedValue(new Error('offline'));
   },
-  EDGE_TTS_PROTOCOL: 'wss',
 }));
 
 vi.mock('@/utils/misc', () => ({
@@ -51,11 +50,10 @@ import type { AppService } from '@/types/system';
 const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 void consoleSpy;
 
-const fakeController = (authed: boolean) => {
+const fakeController = () => {
   const events: string[] = [];
   return {
     controller: {
-      isAuthenticated: authed,
       bookKey: 'hash1-xyz',
       dispatchEvent: (e: Event) => {
         events.push(e.type);
@@ -76,7 +74,7 @@ describe('EdgeTTSClient offline cache-only init', () => {
   });
 
   test('initializes cache-only when the probe fails but a cache exists', async () => {
-    const { controller, events } = fakeController(false);
+    const { controller, events } = fakeController();
     const client = new EdgeTTSClient(controller, fakeAppService);
     await expect(client.init()).resolves.toBe(true);
     expect(client.initialized).toBe(true);
@@ -84,18 +82,18 @@ describe('EdgeTTSClient offline cache-only init', () => {
     expect(events).not.toContain('tts-need-auth');
   });
 
-  test('without a cache, an offline unauthenticated init fails and asks for auth', async () => {
+  test('without a cache, an offline init fails without asking for auth', async () => {
     cacheEnabled = false;
-    const { controller, events } = fakeController(false);
+    const { controller, events } = fakeController();
     const client = new EdgeTTSClient(controller, fakeAppService);
     await expect(client.init()).resolves.toBe(false);
     expect(client.initialized).toBe(false);
-    expect(events).toContain('tts-need-auth');
+    expect(events).not.toContain('tts-need-auth');
   });
 
   test('a successful probe still initializes normally with a cache present', async () => {
     createRejects = false;
-    const { controller } = fakeController(true);
+    const { controller } = fakeController();
     const client = new EdgeTTSClient(controller, fakeAppService);
     await expect(client.init()).resolves.toBe(true);
     expect(client.initialized).toBe(true);

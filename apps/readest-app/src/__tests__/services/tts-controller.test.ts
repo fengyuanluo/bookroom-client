@@ -197,7 +197,7 @@ describe('TTSController', () => {
     vi.clearAllMocks();
     mockView = createMockView();
     mockAppService = createMockAppService();
-    controller = new TTSController(mockAppService, mockView, false);
+    controller = new TTSController(mockAppService, mockView);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -240,12 +240,6 @@ describe('TTSController', () => {
 
     test('stores appService', () => {
       expect(controller.appService).toBe(mockAppService);
-    });
-
-    test('sets isAuthenticated', () => {
-      expect(controller.isAuthenticated).toBe(false);
-      const authed = new TTSController(mockAppService, mockView, true);
-      expect(authed.isAuthenticated).toBe(true);
     });
 
     test('defaults ttsRate to 1.0', () => {
@@ -307,13 +301,13 @@ describe('TTSController', () => {
 
     test('stores preprocessCallback', () => {
       const cb = vi.fn();
-      const c = new TTSController(mockAppService, mockView, false, cb);
+      const c = new TTSController(mockAppService, mockView, cb);
       expect(c.preprocessCallback).toBe(cb);
     });
 
     test('stores onSectionChange callback', () => {
       const cb = vi.fn();
-      const c = new TTSController(mockAppService, mockView, false, undefined, cb);
+      const c = new TTSController(mockAppService, mockView, undefined, cb);
       expect(c.onSectionChange).toBe(cb);
     });
   });
@@ -1043,7 +1037,7 @@ describe('TTSController', () => {
       // would be <= the previous session's and a consumer holding
       // `lastSequenceSeen` would drop it. A module-level counter keeps the
       // sequence strictly increasing across sessions.
-      const controller2 = new TTSController(mockAppService, mockView, false);
+      const controller2 = new TTSController(mockAppService, mockView);
       const secondSeq = await emitOnce(controller2);
 
       expect(secondSeq).toBeGreaterThan(firstSeq);
@@ -2695,7 +2689,7 @@ describe('TTSController', () => {
         getCFI: vi.fn().mockReturnValue('cfi-string'),
         resolveCFI: vi.fn().mockReturnValue({ anchor: vi.fn().mockReturnValue(new Range()) }),
       } as unknown as FoliateView;
-      const c = new TTSController(mockAppService, twoSectionView, false);
+      const c = new TTSController(mockAppService, twoSectionView);
       // Every section entry (start, prev/next, auto-advance) funnels through
       // #initTTSForSection; entering a section must scrub the TTS highlight
       // from EVERY live view, or the outgoing section's last spoken word

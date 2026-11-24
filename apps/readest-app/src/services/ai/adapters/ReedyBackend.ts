@@ -234,8 +234,6 @@ function embeddingModelIdFor(settings: AISettings): string {
   switch (settings.provider) {
     case 'ollama':
       return settings.ollamaEmbeddingModel || 'nomic-embed-text';
-    case 'ai-gateway':
-      return settings.aiGatewayEmbeddingModel || 'openai/text-embedding-3-small';
     case 'openrouter':
       return settings.openrouterEmbeddingModel || 'openai/text-embedding-3-small';
   }

@@ -99,21 +99,6 @@ export type BookMetadata = {
   coverImageBlobUrl?: string;
 
   calibreColumns?: CalibreCustomColumn[];
-  feedUrl?: string;
-
-  // Audiobookshelf mirrors. An ABS stub is fileless: its identity is the
-  // synthetic `abs://<serverId>/<itemId>` filePath, and the library badge is
-  // drawn from duration / media type / episode count. None of those have a
-  // cloud `books` column (and the push strips filePath as device-local), so
-  // they ride across inside this synced metadata payload, exactly as a feed
-  // book carries `feedUrl`. Built and read back in src/utils/audiobook.ts.
-  absSource?: string;
-  absMediaType?: 'podcast' | 'ebook';
-  absEpisodeCount?: number;
-  absDuration?: number;
-  // The partial MD5 of an ABS ebook's file, which KOReader uses as the
-  // book's id; the hash comes from the abs:// path instead (#7088).
-  absFileHash?: string;
 };
 
 export type BookMediaSource =
@@ -171,13 +156,6 @@ export const EXTS: Record<BookFormat, string> = {
   TXT: 'txt',
   MD: 'md',
   HTML: 'html',
-  // ABS books stream from the server and never have a real on-disk file, so
-  // this extension is never used to write or look up a file. It exists only
-  // to satisfy the Record<BookFormat, string> exhaustiveness check.
-  ABS: 'abs',
-  // Same for OPDS audio: the tracks are fetched from the catalog, never stored.
-  OPDSAUDIO: 'opdsaudio',
-  BOOKORBIT: 'bookorbit',
 };
 
 export const MIMETYPES: Record<BookFormat, string[]> = {
@@ -192,12 +170,6 @@ export const MIMETYPES: Record<BookFormat, string[]> = {
   TXT: ['text/plain'],
   MD: ['text/markdown', 'text/x-markdown'],
   HTML: ['text/html'],
-  // Never matched against a real download; see the EXTS.ABS comment above.
-  ABS: ['application/vnd.audiobookshelf'],
-  // OPDS audio is identified from the acquisition link (services/opds/formats),
-  // never by looking a BookFormat up here.
-  OPDSAUDIO: [],
-  BOOKORBIT: [],
 };
 
 export interface DocumentLoaderOptions {
@@ -603,13 +575,12 @@ export class DocumentLoader {
     }
     try {
       // A raw .txt has no binary book format, so the checks below all miss and
-      // `book` stays null. Convert it to EPUB in-memory first (the same
-      // conversion the import path runs) and parse that. The managed library
-      // stores the already-converted EPUB, but the Android "Open with" transient
-      // path points the book at the original .txt, so it reaches us unconverted.
+      // `book` stays null. The library stores TXT as-is (its hash is the TXT's
+      // own partialMD5, the same one BookRoom and KOReader compute), so every
+      // open converts it to EPUB in memory and reports the source format.
       // Markdown is rendered to HTML at runtime (no EPUB conversion). Check
       // this BEFORE isTxt() — a .md served as text/plain would otherwise be
-      // grabbed by the TXT->EPUB path above.
+      // grabbed by the TXT->EPUB path below.
       if (this.isMd()) {
         const { makeMarkdownBook } = await import('@/utils/md');
         return { book: await makeMarkdownBook(this.file), format: 'MD' };
@@ -623,7 +594,8 @@ export class DocumentLoader {
       if (this.isTxt()) {
         const { TxtToEpubConverter } = await import('@/utils/txt');
         const { file: epubFile } = await new TxtToEpubConverter().convert({ file: this.file });
-        return await new DocumentLoader(epubFile).open();
+        const { book } = await new DocumentLoader(epubFile).open();
+        return { book, format: 'TXT' };
       }
       if (await this.isZip()) {
         // EPUB-only fast path: ask Rust to pre-read OPF/nav/ncx + sizes.

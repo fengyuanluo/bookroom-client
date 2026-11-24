@@ -5,6 +5,12 @@ import { HardcoverSyncMapStore } from '@/services/hardcover/HardcoverSyncMapStor
 import type { AppService } from '@/types/system';
 import type { Book, BookConfig, BookNote, HardcoverBookLink } from '@/types/book';
 
+// The web build reaches Hardcover through BookRoom's proxy, which adds the
+// BookRoom token; these tests drive the proxy payload, not authentication.
+vi.mock('@/services/bookroom/proxy', () => ({
+  bookRoomProxyHeaders: vi.fn(async (headers: Record<string, string>) => headers),
+}));
+
 type MockFetchResponse = {
   ok: boolean;
   status?: number;

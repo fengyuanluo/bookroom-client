@@ -54,7 +54,7 @@ afterEach(() => {
 });
 
 const makeStore = () =>
-  createAppLocalStore({ appService, settings: {} as SystemSettings, envConfig });
+  createAppLocalStore({ appService, settings: {} as SystemSettings, envConfig, remote: 'webdav' });
 
 describe('createAppLocalStore — library hydration (data-loss guard)', () => {
   test('addBookToLibrary keeps existing on-disk books when the store is unloaded', async () => {
@@ -73,6 +73,7 @@ describe('createAppLocalStore — library hydration (data-loss guard)', () => {
     );
 
     expect(savedLibrary!.find((book) => book.hash === 'c')).toMatchObject({
+      remote: 'webdav',
       uploadedAt: 900,
       downloadedAt: null,
       coverDownloadedAt: 800,

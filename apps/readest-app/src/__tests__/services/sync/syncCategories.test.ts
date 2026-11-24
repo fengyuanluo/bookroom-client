@@ -70,16 +70,12 @@ describe('isSyncCategoryEnabled', () => {
     });
   });
 
-  describe('cloud sync provider gate (exclusive routing, #4380)', () => {
-    test('book/progress/note are gated off while a third-party provider is selected', () => {
-      setSettings({ webdav: { enabled: true } } as Partial<SystemSettings>);
-      expect(isSyncCategoryEnabled('book')).toBe(false);
-      expect(isSyncCategoryEnabled('progress')).toBe(false);
-      expect(isSyncCategoryEnabled('note')).toBe(false);
-    });
-
+  describe('cloud sync provider gate', () => {
     test('legacy plural/singular aliases are gated too', () => {
-      setSettings({ googleDrive: { enabled: true } } as Partial<SystemSettings>);
+      setSettings({
+        readestCloud: { enabled: false },
+        googleDrive: { enabled: true },
+      } as Partial<SystemSettings>);
       expect(isSyncCategoryEnabled('books')).toBe(false);
       expect(isSyncCategoryEnabled('configs')).toBe(false);
       expect(isSyncCategoryEnabled('config')).toBe(false);
@@ -97,6 +93,7 @@ describe('isSyncCategoryEnabled', () => {
 
     test('the gate overrides an explicitly-true user category toggle', () => {
       setSettings({
+        readestCloud: { enabled: false },
         webdav: { enabled: true },
         syncCategories: { book: true, progress: true },
       } as Partial<SystemSettings>);
@@ -104,7 +101,7 @@ describe('isSyncCategoryEnabled', () => {
       expect(isSyncCategoryEnabled('progress')).toBe(false);
     });
 
-    test('no gating when readest is the provider', () => {
+    test('no gating while Readest Cloud is on (the default)', () => {
       setSettings({
         webdav: { enabled: false },
         googleDrive: { enabled: false },
@@ -236,9 +233,11 @@ describe('isSyncCategoryEnabled', () => {
       expect(isSyncCategoryEnabled('settings')).toBe(true);
     });
 
-    test('a legacy Drive user (no readestCloud field) keeps the native channels gated', () => {
+    test('a legacy Drive user (no readestCloud field) keeps the native channels on', () => {
+      // Readest Cloud defaults ON when the flag was never written: providers
+      // are independently selectable, so choosing Drive does not switch it off.
       setSettings({ googleDrive: { enabled: true } } as Partial<SystemSettings>);
-      expect(isSyncCategoryEnabled('book')).toBe(false);
+      expect(isSyncCategoryEnabled('book')).toBe(true);
     });
   });
 });
@@ -253,10 +252,9 @@ describe('translator category', () => {
 });
 
 describe('SYNC_CATEGORIES', () => {
-  test('covers all fifteen user-facing categories (incl. book_data + settings + stats + vocabulary + credentials)', () => {
+  test('covers all fourteen user-facing categories (incl. book_data + settings + stats + vocabulary + credentials)', () => {
     expect([...SYNC_CATEGORIES].sort()).toEqual(
       [
-        'abs_server',
         'book',
         'book_data',
         'credentials',

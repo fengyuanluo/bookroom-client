@@ -11,22 +11,12 @@ import { stubTranslation as _ } from '@/utils/misc';
 
 export const DEFAULT_BOOKSHELF_ID = 'default';
 export const RECENT_BOOKSHELF_ID = 'recent';
-export const AUDIOBOOKS_BOOKSHELF_ID = 'audiobooks';
-export const PODCASTS_BOOKSHELF_ID = 'podcasts';
 export const FINISHED_BOOKSHELF_ID = 'finished';
-export const BUILTIN_BOOKSHELF_IDS = [
-  'recent',
-  'audiobooks',
-  'podcasts',
-  'default',
-  'finished',
-] as const;
+export const BUILTIN_BOOKSHELF_IDS = ['recent', 'default', 'finished'] as const;
 // Positions are persisted independently of definitions. Insert new presets into gaps;
 // never renumber existing positions when adding a predefined shelf.
 export const BUILTIN_BOOKSHELF_POSITIONS: Readonly<Record<string, number>> = {
   recent: 0,
-  audiobooks: 256,
-  podcasts: 512,
   default: 1024,
   finished: 2048,
 };
@@ -37,13 +27,9 @@ export const bookshelfName = (shelf: BookshelfDefinition) =>
   shelf.name ||
   (shelf.id === RECENT_BOOKSHELF_ID
     ? _('Recently read')
-    : shelf.id === AUDIOBOOKS_BOOKSHELF_ID
-      ? _('Audiobooks')
-      : shelf.id === PODCASTS_BOOKSHELF_ID
-        ? _('Podcasts')
-        : shelf.id === FINISHED_BOOKSHELF_ID
-          ? _('Finished books')
-          : _('Default'));
+    : shelf.id === FINISHED_BOOKSHELF_ID
+      ? _('Finished books')
+      : _('Default'));
 // Keep existing serialized layouts compatible; only Carousel is a per-shelf choice.
 export const resolveBookshelfLayout = (
   shelf: BookshelfDefinition,
@@ -219,30 +205,6 @@ export const defaultBookshelves = (settings: Partial<SystemSettings>): Bookshelf
       ],
     },
     sort: { by: 'updated', ascending: false, thenBy: 'none', thenAscending: true },
-  },
-  {
-    ...createBookshelf('', AUDIOBOOKS_BOOKSHELF_ID),
-    skeuomorphicCovers: settings.librarySkeuomorphicCovers ?? false,
-    exclusive: true,
-    filters: {
-      type: 'group',
-      match: 'all',
-      children: [
-        { type: 'rule', field: 'audio', kind: 'boolean', operator: 'equals', value: true },
-      ],
-    },
-  },
-  {
-    ...createBookshelf('', PODCASTS_BOOKSHELF_ID),
-    skeuomorphicCovers: settings.librarySkeuomorphicCovers ?? false,
-    exclusive: true,
-    filters: {
-      type: 'group',
-      match: 'all',
-      children: [
-        { type: 'rule', field: 'mediaType', kind: 'text', operator: 'equals', value: 'podcast' },
-      ],
-    },
   },
   {
     ...createBookshelf('', DEFAULT_BOOKSHELF_ID),

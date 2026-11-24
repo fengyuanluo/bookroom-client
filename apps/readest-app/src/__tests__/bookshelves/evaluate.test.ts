@@ -34,45 +34,6 @@ const filter = {
 const shelf = (name: string) => createBookshelf(name);
 
 describe('bookshelf evaluation', () => {
-  it('provides exclusive Audiobooks and Podcasts carousels before Default', () => {
-    const defaults = defaultBookshelves({});
-    expect(defaults.map((s) => s.id)).toEqual([
-      'recent',
-      'audiobooks',
-      'podcasts',
-      'default',
-      'finished',
-    ]);
-    for (const id of ['audiobooks', 'podcasts']) {
-      expect(defaults.find((s) => s.id === id)).toMatchObject({
-        enabled: true,
-        layout: 'carousel',
-        exclusive: true,
-        includeExclusiveBooks: false,
-        hideCovers: false,
-        coverFit: 'crop',
-        useGlobalGrouping: true,
-        useGlobalSort: true,
-      });
-    }
-    const results = evaluateBookshelves(
-      [
-        { ...book('audio'), format: 'ABS' },
-        { ...book('podcast'), format: 'ABS', absMediaType: 'podcast' },
-        book('ebook'),
-      ],
-      defaults,
-    );
-    expect(results.find((s) => s.definition.id === 'audiobooks')?.books.map((b) => b.hash)).toEqual(
-      ['audio'],
-    );
-    expect(results.find((s) => s.definition.id === 'podcasts')?.books.map((b) => b.hash)).toEqual([
-      'podcast',
-    ]);
-    expect(results.find((s) => s.definition.id === 'default')?.books.map((b) => b.hash)).toEqual([
-      'ebook',
-    ]);
-  });
   it('gives exclusive Finished books priority over other exclusive shelves regardless of order or name', () => {
     const finished = {
       ...defaultBookshelves({}).find((s) => s.id === 'finished')!,
@@ -80,8 +41,8 @@ describe('bookshelf evaluation', () => {
       enabled: true,
       exclusive: true,
     };
-    const audio = {
-      ...shelf('Audio'),
+    const pdf = {
+      ...shelf('PDF'),
       exclusive: true,
       filters: {
         type: 'group' as const,
@@ -89,10 +50,10 @@ describe('bookshelf evaluation', () => {
         children: [
           {
             type: 'rule' as const,
-            field: 'audio',
-            kind: 'boolean' as const,
+            field: 'format',
+            kind: 'text' as const,
             operator: 'equals' as const,
-            value: true,
+            value: 'PDF',
           },
         ],
       },
@@ -100,18 +61,18 @@ describe('bookshelf evaluation', () => {
     const ordinary = shelf('Ordinary');
     const inclusive = { ...shelf('Inclusive'), includeExclusiveBooks: true };
     const books: Book[] = [
-      { ...book('finished-audio'), format: 'ABS', readingStatus: 'finished' },
+      { ...book('finished-pdf'), format: 'PDF', readingStatus: 'finished' },
       { ...book('finished-ebook'), readingStatus: 'finished' },
-      { ...book('reading-audio'), format: 'ABS', readingStatus: 'reading' },
+      { ...book('reading-pdf'), format: 'PDF', readingStatus: 'reading' },
       { ...book('reading-ebook'), readingStatus: 'reading' },
     ];
     for (const definitions of [
-      [audio, ordinary, inclusive, finished],
-      [finished, audio, ordinary, inclusive],
+      [pdf, ordinary, inclusive, finished],
+      [finished, pdf, ordinary, inclusive],
     ]) {
       const results = evaluateBookshelves(books, definitions);
-      expect(results.find((s) => s.definition.id === audio.id)!.books.map((b) => b.hash)).toEqual([
-        'reading-audio',
+      expect(results.find((s) => s.definition.id === pdf.id)!.books.map((b) => b.hash)).toEqual([
+        'reading-pdf',
       ]);
       expect(
         results.find((s) => s.definition.id === ordinary.id)!.books.map((b) => b.hash),
@@ -119,15 +80,15 @@ describe('bookshelf evaluation', () => {
       expect(results.find((s) => s.definition.id === inclusive.id)!.books).toHaveLength(4);
       expect(
         results.find((s) => s.definition.id === finished.id)!.books.map((b) => b.hash),
-      ).toEqual(['finished-audio', 'finished-ebook']);
+      ).toEqual(['finished-ebook', 'finished-pdf']);
     }
     for (const inactive of [
       { ...finished, enabled: false },
       { ...finished, exclusive: false },
     ]) {
-      expect(evaluateBookshelves(books, [audio, inactive])[0]!.books.map((b) => b.hash)).toEqual([
-        'finished-audio',
-        'reading-audio',
+      expect(evaluateBookshelves(books, [pdf, inactive])[0]!.books.map((b) => b.hash)).toEqual([
+        'finished-pdf',
+        'reading-pdf',
       ]);
     }
   });
@@ -140,9 +101,9 @@ describe('bookshelf evaluation', () => {
     const ordinary = shelf('Ordinary');
     const inclusive = { ...shelf('Inclusive'), includeExclusiveBooks: true };
     const books: Book[] = [
-      { ...book('finished-audio'), format: 'ABS', readingStatus: 'finished' },
+      { ...book('finished-pdf'), format: 'PDF', readingStatus: 'finished' },
       { ...book('finished-ebook'), readingStatus: 'finished' },
-      { ...book('reading-audio'), format: 'ABS', readingStatus: 'reading' },
+      { ...book('reading-pdf'), format: 'PDF', readingStatus: 'reading' },
     ];
     for (const definitions of [
       [ordinary, inclusive, finished],
@@ -151,11 +112,11 @@ describe('bookshelf evaluation', () => {
       const results = evaluateBookshelves(books, definitions);
       expect(
         results.find((s) => s.definition.id === ordinary.id)!.books.map((b) => b.hash),
-      ).toEqual(['reading-audio']);
+      ).toEqual(['reading-pdf']);
       expect(results.find((s) => s.definition.id === inclusive.id)!.books).toHaveLength(3);
       expect(
         results.find((s) => s.definition.id === finished.id)!.books.map((b) => b.hash),
-      ).toEqual(['finished-audio', 'finished-ebook']);
+      ).toEqual(['finished-ebook', 'finished-pdf']);
     }
   });
   it('includes exclusive books in Recently read by default without changing ownership', () => {
@@ -195,13 +156,7 @@ describe('bookshelf evaluation', () => {
   });
   it('provides a disabled Finished books carousel after Default that matches only finished books', () => {
     const defaults = defaultBookshelves({});
-    expect(defaults.map((s) => s.id)).toEqual([
-      'recent',
-      'audiobooks',
-      'podcasts',
-      'default',
-      'finished',
-    ]);
+    expect(defaults.map((s) => s.id)).toEqual(['recent', 'default', 'finished']);
     const finished = defaults.find((s) => s.id === 'finished')!;
     expect(finished).toMatchObject({ enabled: false, layout: 'carousel' });
     expect(bookshelfName(finished)).toBe('Finished books');
@@ -229,18 +184,6 @@ describe('bookshelf evaluation', () => {
     expect(
       enabledResults.find((s) => s.definition.id === 'finished')!.books.map((b) => b.hash),
     ).toEqual(['newer', 'older']);
-  });
-  it('classifies an ABS podcast known only from its metadata mirror as a podcast', () => {
-    const podcast: Book = {
-      ...book('show'),
-      format: 'ABS',
-      metadata: { title: 'Show', author: 'Host', language: 'en', absMediaType: 'podcast' },
-    };
-    const results = evaluateBookshelves([podcast], defaultBookshelves({}));
-    expect(results.find((s) => s.definition.id === 'podcasts')!.books.map((b) => b.hash)).toEqual([
-      'show',
-    ]);
-    expect(results.find((s) => s.definition.id === 'audiobooks')!.books).toEqual([]);
   });
   it('uses the moved Default bookshelf position for exclusive ownership', () => {
     const main = {
@@ -361,8 +304,6 @@ describe('bookshelf evaluation', () => {
       { ...book('local'), downloadedAt: 1 },
       { ...book('downloaded'), downloadedAt: 1, uploadedAt: 1 },
       { ...book('cloud'), uploadedAt: 1 },
-      { ...book('abs'), format: 'ABS' as const, absDownloadedAt: 1, uploadedAt: 1 },
-      { ...book('streaming'), format: 'ABS' as const, filePath: 'abs://server/item' },
       { ...book('referenced'), filePath: '/books/referenced.epub' },
     ];
     const matching = (value: string) =>
@@ -383,7 +324,7 @@ describe('bookshelf evaluation', () => {
         )
         .map((b) => b.hash);
     expect(matching('localOnly')).toEqual(['local', 'referenced']);
-    expect(matching('downloaded')).toEqual(['downloaded', 'abs']);
+    expect(matching('downloaded')).toEqual(['downloaded']);
     expect(matching('cloudOnly')).toEqual(['cloud']);
   });
   it('collects the library values of list-like fields for the value picker', () => {

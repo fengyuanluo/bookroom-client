@@ -9,8 +9,6 @@ import {
   ReadingStatus,
 } from '@/types/book';
 import { DBBookConfig, DBBook, DBBookNote } from '@/types/records';
-import { buildFeedBookUrl } from '@/services/rss/feedBookUrl';
-import { restoreAbsBookFields } from './audiobook';
 
 // Postgres text columns reject NUL. Kept here rather than in sanitize.ts, which
 // loads DOMPurify: the sync API route imports this module on every cold start.
@@ -189,17 +187,6 @@ export const transformBookFromDB = (dbBook: DBBook): Book => {
   // merge's `{ ...local, ...remote }` spread.
   if (page_count != null) book.pageCount = page_count;
   if (original_filename != null) book.originalFilename = original_filename;
-  // Native cloud DBBook has no `url` column; a feed book carries its feed URL in
-  // metadata so the reader can rebuild the feed:// descriptor here.
-  if (!book.url && book.metadata?.feedUrl) {
-    book.url = buildFeedBookUrl(book.metadata.feedUrl);
-  }
-  // Same story for an ABS stub, whose identity is its `abs://` filePath: no
-  // column carries it (and the push strips filePath as device-local), so it
-  // rides in metadata and is rebuilt here along with the badge fields.
-  if (book.format === 'ABS') {
-    restoreAbsBookFields(book);
-  }
   return book;
 };
 

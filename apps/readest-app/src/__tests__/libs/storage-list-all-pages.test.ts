@@ -68,16 +68,18 @@ describe('a book with more than one page of cloud files', () => {
     const purged: string[] = [];
     vi.mocked(fetchWithAuth).mockImplementation(async (url, init) => {
       if (url.includes('/storage/list')) return serveList(url);
-      if (url.includes('/storage/purge')) {
-        const { fileKeys } = JSON.parse(String(init.body)) as { fileKeys: string[] };
-        purged.push(...fileKeys);
-        return new Response(JSON.stringify({ failedCount: 0 }), { status: 200 });
+      if (url.includes('/storage/delete')) {
+        expect(init?.method).toBe('DELETE');
+        purged.push(new URL(url).searchParams.get('fileKey')!);
+        return new Response(null, { status: 204 });
       }
       return new Response('{}', { status: 200 });
     });
     const book = { hash: 'h', title: 'Title', format: 'EPUB', uploadedAt: 1 } as unknown as Book;
     await deleteBook({} as FileSystem, book, 'cloud');
-    await vi.waitFor(() => expect(purged).toHaveLength(PAGE + 1));
+    await vi.waitFor(() =>
+      expect(purged.filter((key) => key.includes('/tts/'))).toHaveLength(PAGE + 1),
+    );
     expect(purged).toContain(`u1/Readest/Books/h/tts/${PAGE}-a.mp3`);
   });
 

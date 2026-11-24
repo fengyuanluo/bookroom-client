@@ -25,7 +25,6 @@ import { DEFAULT_NEARBY_WORDS } from '@/utils/searchConfig';
 import { addLibrarySearchHistory } from './utils/searchHistory';
 import type { LibrarySearchTarget } from '@/types/book';
 import { navigateToLibrary, navigateToReader } from '@/utils/nav';
-import { splitLibraryOpenIds } from '@/utils/audiobook';
 import { listFormater, markBookDeleted } from '@/utils/book';
 import { getImportErrorMessage } from '@/services/errors';
 import { ingestFile } from '@/services/ingestService';
@@ -33,7 +32,9 @@ import { saveBookMetadataEdit } from '@/services/bookMetadataEdit';
 import { eventDispatcher } from '@/utils/event';
 import { transferManager } from '@/services/transferManager';
 import { purgeCloudBookData } from '@/services/purgeCloudBookData';
-import { isReadestCloudStorageActive } from '@/services/sync/cloudSyncProvider';
+import { catalogOfRemote, getCurrentRemote, isOnBookRoom } from '@/services/remote';
+import { hasBookSyncTarget } from '@/services/sync/cloudSyncProvider';
+import { getSession } from '@/services/bookroom/session';
 import { getFilename, getFolderImportGroupName, joinScannedPath } from '@/utils/path';
 import {
   extractCollectionPack,
@@ -56,13 +57,10 @@ import { useResponsiveSize } from '@/hooks/useResponsiveSize';
 import { useLibraryRefresh } from './hooks/useLibraryRefresh';
 import { useTheme } from '@/hooks/useTheme';
 import { useUICSS } from '@/hooks/useUICSS';
-import { useDemoBooks } from './hooks/useDemoBooks';
 import { useBooksSync } from './hooks/useBooksSync';
 import { useLibraryFileSync } from './hooks/useLibraryFileSync';
 import { useBookTransferActions } from './hooks/useBookTransferActions';
-import { useAbsOfflineDownload } from './hooks/useAbsOfflineDownload';
 import { useAutoImportFolders } from './hooks/useAutoImportFolders';
-import { useInboxDrainer } from '@/hooks/useInboxDrainer';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useTransferStore } from '@/store/transferStore';
 import { useBackgroundTexture } from '@/hooks/useBackgroundTexture';
@@ -71,9 +69,6 @@ import { useAppUrlIngress } from '@/hooks/useAppUrlIngress';
 import { useOpenWithBooks } from '@/hooks/useOpenWithBooks';
 import { useOpenLaunchLinks } from '@/hooks/useOpenLaunchLinks';
 import { useHomeScreenWidgets } from '@/hooks/useHomeScreenWidgets';
-import { useOpenShareLink } from '@/hooks/useOpenShareLink';
-import { useOpenDeviceLink } from '@/hooks/useOpenDeviceLink';
-import { useClipUrlIngress } from '@/hooks/useClipUrlIngress';
 import { useWebBrowserDownloads } from '@/hooks/useWebBrowserDownloads';
 import { useKeyDownActions } from '@/hooks/useKeyDownActions';
 import { SelectedFile, resolveTauriFileName, useFileSelector } from '@/hooks/useFileSelector';
@@ -100,10 +95,6 @@ import LocalSendManager from '@/components/localsend/LocalSendManager';
 import { BookDetailModal } from '@/components/metadata';
 import { UpdaterWindow } from '@/components/UpdaterWindow';
 import { CatalogDialog } from './components/OPDSDialog';
-import { FeedsView } from './components/feeds/FeedsView';
-import AddFeedModal from './components/feeds/AddFeedModal';
-import { fetchAndParseFeed } from '@/services/rss/feedClient';
-import { createFeedBook, ensureFeedBookCover } from '@/services/rss/feedBook';
 import { MigrateDataWindow } from './components/MigrateDataWindow';
 import { BackupWindow } from './components/BackupWindow';
 import { CacheManagerWindow } from './components/CacheManagerWindow';
@@ -122,12 +113,9 @@ import ImportFromFolderDialog, {
   ImportFromFolderResult,
 } from './components/ImportFromFolderDialog';
 import WebSourcesDialog from './components/WebSourcesDialog';
-import ImportNovelDialog from './components/ImportNovelDialog';
 import ImportPastedTextDialog from './components/ImportPastedTextDialog';
-import NowPlayingBar from './components/NowPlayingBar';
 import { convertToEpubWithWorker } from '@/services/send/conversion/conversionWorker';
 import type { WebBrowserPage } from '@/services/webBrowser/webBrowser';
-import ClipSignInAlert from '@/components/ClipSignInAlert';
 import useShortcuts from '@/hooks/useShortcuts';
 import { useReplicaPull } from '@/hooks/useReplicaPull';
 import { useCustomFonts } from '@/hooks/useCustomFonts';
@@ -244,16 +232,15 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const isTransferQueueOpen = useTransferStore((state) => state.isTransferQueueOpen);
 
   // Library page pulls user replicas (dictionaries, custom fonts,
-  // background textures, OPDS catalogs, Audiobookshelf servers, custom
-  // translators + prompts, custom TTS services, bundled settings). Deferred 10s; module-scoped
-  // dedup means a later navigation to the reader won't re-pull the same kind.
+  // background textures, OPDS catalogs, custom translators + prompts, custom
+  // TTS services, bundled settings). Deferred 10s; module-scoped dedup means a
+  // later navigation to the reader won't re-pull the same kind.
   useReplicaPull({
     kinds: [
       'dictionary',
       'font',
       'texture',
       'opds_catalog',
-      'abs_server',
       'custom_translator',
       'translation_prompt',
       'custom_tts',
@@ -269,10 +256,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const [showCatalogManager, setShowCatalogManager] = useState(
     searchParams?.get('opds') === 'true',
   );
-  const [showFeeds, setShowFeeds] = useState(false);
-  const [showAddFeed, setShowAddFeed] = useState(false);
   const [showWebSources, setShowWebSources] = useState(false);
-  const [showImportNovel, setShowImportNovel] = useState(false);
   const [showImportPastedText, setShowImportPastedText] = useState(false);
   const [importMenuAnchor, setImportMenuAnchor] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
@@ -330,7 +314,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
 
   const iconSize = useResponsiveSize(18);
   const viewSettings = settings.globalViewSettings;
-  const demoBooks = useDemoBooks();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const handleScrollerRef = useCallback((el: HTMLDivElement | null) => {
     scrollRef.current = el;
@@ -387,9 +370,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   useOpenWithBooks();
   useOpenLaunchLinks();
   useHomeScreenWidgets();
-  useOpenShareLink();
-  useOpenDeviceLink();
-  useClipUrlIngress();
   useWebBrowserDownloads();
   useTransferQueue(libraryLoaded);
 
@@ -399,7 +379,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   // parity with useBooksSync. No-op when no provider is enabled.
   useLibraryFileSync();
   useLibraryRefresh(scrollRef, pullLibrary);
-  useInboxDrainer();
   const { isDragging } = useDragDropImport();
   useShortcuts({
     onToggleFullscreen: () => {
@@ -682,26 +661,19 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     return false;
   };
 
-  const handleShowFeeds = () => {
-    setShowAddFeed(true);
-  };
-
-  const handleAddFeedSubmit = async (url: string) => {
-    const parsed = await fetchAndParseFeed(url);
-    const book = createFeedBook(url, parsed);
-    if (appService) {
-      book.coverImageUrl = await ensureFeedBookCover(appService, book);
-    }
-    await useLibraryStore.getState().updateBooks(envConfig, [book]);
-    eventDispatcher.dispatch('toast', {
-      type: 'success',
-      message: _('Subscribed to "{{title}}"', { title: book.title }),
-      timeout: 3000,
-    });
-  };
-
   const handleShowOPDSDialog = () => {
     setShowCatalogManager(true);
+  };
+
+  // An OPDS catalog's shelf fills from browsing the catalog, not from imports
+  // (ADR 0010), so its "add books" button opens the catalog.
+  const handleAddBooks = (anchor: HTMLElement) => {
+    const catalog = catalogOfRemote(settings, getCurrentRemote(settings));
+    if (!catalog) {
+      setImportMenuAnchor(anchor);
+      return;
+    }
+    router.push(`/catalog?${new URLSearchParams({ url: catalog.url, id: catalog.id }).toString()}`);
   };
 
   const handleDismissOPDSDialog = () => {
@@ -724,23 +696,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       const bookIds = pendingNavigationBookIds;
       setPendingNavigationBookIds(null);
       if (bookIds.length > 0) {
-        const { audiobookHash, readerIds, droppedAudiobooks } = splitLibraryOpenIds(
-          bookIds,
-          (hash) => libraryBooks.find((book) => book.hash === hash),
-        );
-        if (audiobookHash) {
-          router.push(`/player?id=${audiobookHash}`);
-          return;
-        }
-        if (droppedAudiobooks) {
-          eventDispatcher.dispatch('toast', {
-            message: _('Audiobooks open in the player'),
-            type: 'info',
-          });
-        }
-        if (readerIds.length > 0) {
-          navigateToReader(router, readerIds);
-        }
+        navigateToReader(router, bookIds);
       }
     }
   }, [pendingNavigationBookIds, appService, router, libraryBooks]);
@@ -929,23 +885,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       setCurrentVirtualGroup(null);
     }
   }, [libraryBooks, searchParams, settings.libraryGroupBy, settings.bookshelves]);
-
-  useEffect(() => {
-    if (demoBooks.length > 0 && libraryLoaded) {
-      const newLibrary = [...libraryBooks];
-      for (const book of demoBooks) {
-        const idx = newLibrary.findIndex((b) => b.hash === book.hash);
-        if (idx === -1) {
-          newLibrary.push(book);
-        } else {
-          newLibrary[idx] = book;
-        }
-      }
-      setLibrary(newLibrary);
-      appService?.saveLibraryBooks(newLibrary);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demoBooks, libraryLoaded]);
 
   const importBooks = (
     files: SelectedFile[],
@@ -1246,8 +1185,9 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       try {
         // Purge also erases the book's synced progress and notes, or the next
         // open pulls them straight back (#6532). It runs first: if the network
-        // step fails, nothing irreversible has happened locally yet.
-        if (deleteAction === 'purge' && user) {
+        // step fails, nothing irreversible has happened locally yet. Only a
+        // BookRoom book has any there (ADR 0010).
+        if (deleteAction === 'purge' && user && isOnBookRoom(book)) {
           await purgeCloudBookData(book.hash);
         }
 
@@ -1271,22 +1211,14 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           if (syncBooks) pushLibrary();
         }
 
-        // Cloud deletion. The transfer queue only speaks to Readest storage, so a
-        // book whose cloud copy lives on the selected third-party provider must
-        // not be routed through it — it would delete nothing. 'both' / 'purge'
-        // tombstoned the book above, and the file sync GCs a tombstoned book's
-        // remote directory on its next run, so the removal is already covered.
-        // ("Remove from Cloud Only" is not offered for those providers — see
-        // BookDetailModal.)
-        if (deleteAction === 'cloud' || deleteAction === 'both' || deleteAction === 'purge') {
-          if (isReadestCloudStorageActive(useSettingsStore.getState().settings)) {
-            const transferId = transferManager.queueDelete(book, 1, true);
-            if (!transferId) {
-              throw new Error('Failed to queue cloud deletion');
-            }
-          } else {
-            book.uploadedAt = null;
-            await updateBook(envConfig, book);
+        // BookRoom's library is shared: deleting a book only tombstones this
+        // user's row, pushed above. Taking the file out of the library itself
+        // is the admin-only "Remove from Cloud" action (ADR 0013). File-sync
+        // backends GC a tombstoned book's directory on their next run.
+        if (deleteAction === 'cloud') {
+          const transferId = transferManager.queueDelete(book, 1, true);
+          if (!transferId) {
+            throw new Error('Failed to queue cloud deletion');
           }
         }
 
@@ -1305,35 +1237,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       }
     };
   };
-
-  // Audiobookshelf offline downloads (#6256): the shelf's context menu asks
-  // through events so the handlers need not be threaded through every shelf.
-  // Removing the copy is "Remove from Device Only".
-  const { handleBookOfflineDownload, handleBooksOfflineDownload, offlinePremiumLabel } =
-    useAbsOfflineDownload();
-  const offlineHandlersRef = useRef({
-    download: handleBooksOfflineDownload,
-    remove: handleBookDelete('local'),
-  });
-  offlineHandlersRef.current = {
-    download: handleBooksOfflineDownload,
-    remove: handleBookDelete('local'),
-  };
-  useEffect(() => {
-    // `books` from a select-mode bulk Download, `book` from a context menu.
-    const onDownload = (event: CustomEvent) => {
-      offlineHandlersRef.current.download(event.detail.books ?? [event.detail.book]);
-    };
-    const onRemove = async (event: CustomEvent) => {
-      await offlineHandlersRef.current.remove(event.detail.book);
-    };
-    eventDispatcher.on('abs-offline-download', onDownload);
-    eventDispatcher.on('abs-offline-remove', onRemove);
-    return () => {
-      eventDispatcher.off('abs-offline-download', onDownload);
-      eventDispatcher.off('abs-offline-remove', onRemove);
-    };
-  }, []);
 
   const handleUpdateMetadata = (book: Book, metadata: BookMetadata, tags: string[]) =>
     saveBookMetadataEdit(envConfig, book, metadata, tags, !!user);
@@ -1384,15 +1287,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     setIsSelectMode(false);
     const book = await convertToEpubWithWorker({ kind: 'page', ...page });
     await importBooks([{ file: book.file }], searchParams?.get('group') || '');
-  };
-
-  // The dialog fetches the chapter list and assembles the EPUB itself
-  // (with its own progress/cancel UI) — from here on the built file takes
-  // exactly the local-file import path, same as a clipped page.
-  const handleImportNovelFile = async (file: File) => {
-    setIsSelectMode(false);
-    const groupId = searchParams?.get('group') || '';
-    await importBooks([{ file }], groupId);
   };
 
   const handleImportPastedText = async (file: File) => {
@@ -1984,11 +1878,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
             appService?.canReadExternalDir ? handleImportBooksFromDirectory : undefined
           }
           onImportFromWebBrowser={isTauriAppPlatform() ? () => setShowWebSources(true) : undefined}
-          onImportBookFromNovelUrl={
-            isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
-          }
           onOpenCatalogManager={handleShowOPDSDialog}
-          onOpenFeeds={handleShowFeeds}
           onToggleSelectMode={() => handleSetSelectMode(!isSelectMode)}
           onSelectAll={handleSelectAll}
           onDeselectAll={handleDeselectAll}
@@ -2088,7 +1978,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
               isSelectAll={isSelectAll}
               isSelectNone={isSelectNone}
               onScrollerRef={handleScrollerRef}
-              handleImportBooks={setImportMenuAnchor}
+              handleImportBooks={handleAddBooks}
               handleBookUpload={handleBookUpload}
               handleBookDownload={handleBookDownload}
               handleBookDelete={handleBookDelete('both')}
@@ -2120,33 +2010,29 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
             appService?.canReadExternalDir ? handleImportBooksFromDirectory : undefined
           }
           onImportFromWebBrowser={isTauriAppPlatform() ? () => setShowWebSources(true) : undefined}
-          onImportBookFromNovelUrl={
-            isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
-          }
           onOpenCatalogManager={handleShowOPDSDialog}
-          onOpenFeeds={handleShowFeeds}
         />
       )}
-      <NowPlayingBar isSelectMode={isSelectMode} />
       {showDetailsBook && (
         <BookDetailModal
           isOpen={!!showDetailsBook}
           book={showDetailsBook}
           onClose={() => setShowDetailsBook(null)}
-          handleBookUpload={handleBookUpload}
+          // A book uploads only to the remote it belongs to (ADR 0010).
+          handleBookUpload={
+            hasBookSyncTarget(settings, showDetailsBook) ? handleBookUpload : undefined
+          }
           handleBookDownload={handleBookDownload}
           handleBookDelete={handleBookDelete('both')}
-          // Readest storage only. A third-party provider mirrors the library, so
-          // removing just its cloud copy is not expressible: the next sync would
-          // upload the still-local book straight back (#5084).
+          // Only a BookRoom admin can take a book out of the shared library.
           handleBookDeleteCloudBackup={
-            isReadestCloudStorageActive(settings) ? handleBookDelete('cloud') : undefined
+            isOnBookRoom(showDetailsBook) && getSession()?.user.isAdmin
+              ? handleBookDelete('cloud')
+              : undefined
           }
           handleBookDeleteLocalCopy={handleBookDelete('local')}
           handleBookPurge={handleBookDelete('purge')}
           handleBookMetadataUpdate={handleUpdateMetadata}
-          handleBookOfflineDownload={isTauriAppPlatform() ? handleBookOfflineDownload : undefined}
-          offlinePremiumLabel={offlinePremiumLabel}
           onMetadataValueClick={handleMetadataValueClick}
         />
       )}
@@ -2166,12 +2052,6 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       <CacheManagerWindow />
       {isSettingsDialogOpen && <SettingsDialog bookKey={''} />}
       {showCatalogManager && <CatalogDialog onClose={handleDismissOPDSDialog} />}
-      {showFeeds && <FeedsView onClose={() => setShowFeeds(false)} />}
-      <AddFeedModal
-        isOpen={showAddFeed}
-        onClose={() => setShowAddFeed(false)}
-        onSubmit={handleAddFeedSubmit}
-      />
       {failedImportsModal && (
         <FailedImportsDialog
           failedImports={failedImportsModal}
@@ -2232,17 +2112,11 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
         onClose={() => setShowWebSources(false)}
         onClip={handleClipWebPage}
       />
-      <ImportNovelDialog
-        isOpen={showImportNovel}
-        onClose={() => setShowImportNovel(false)}
-        onImport={handleImportNovelFile}
-      />
       <ImportPastedTextDialog
         isOpen={showImportPastedText}
         onClose={() => setShowImportPastedText(false)}
         onImport={handleImportPastedText}
       />
-      <ClipSignInAlert />
       <Toast />
     </div>
   );

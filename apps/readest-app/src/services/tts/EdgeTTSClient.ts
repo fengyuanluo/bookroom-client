@@ -1,5 +1,3 @@
-import { EDGE_TTS_PROTOCOL } from '@/libs/edgeTTS';
-import { isTauriAppPlatform } from '@/services/environment';
 import { AppService } from '@/types/system';
 import { BufferedTTSClient } from './BufferedTTSClient';
 import { createBookTTSCacheStore } from './providers/bookCacheStore';
@@ -44,35 +42,18 @@ export class EdgeTTSClient extends BufferedTTSClient {
     this.#edgeProvider = edgeProvider;
   }
 
-  override async init(_protocol: EDGE_TTS_PROTOCOL = 'wss'): Promise<boolean> {
+  override async init(): Promise<boolean> {
     this.voices = await this.#edgeProvider.getAllVoices();
-    // The free wss transport is intermittently blocked in browsers;
-    // authenticated users fall back to the https proxy route. On Tauri the
-    // native WebSocket (with full headers) is the only Edge transport — a
-    // failure there means offline or Edge itself is down, so never fall back
-    // to the proxy, which would fire cross-origin /api/tts/edge requests.
-    if (await this.#edgeProvider.init('wss')) {
+    if (await this.#edgeProvider.init()) {
       this.initialized = true;
       return true;
     }
-    if (
-      !isTauriAppPlatform() &&
-      this.controller?.isAuthenticated &&
-      (await this.#edgeProvider.init('https'))
-    ) {
-      this.initialized = true;
-      return true;
-    }
-    // Every probe failed: blocked, or offline. With a persistent cache a
+    // The probe failed: blocked, or offline. With a persistent cache a
     // pre-downloaded book still plays (hits play, misses skip via the
-    // provider's permanent error), so init as cache-only rather than fail —
-    // and do NOT nag a signed-out user with a warm cache to sign in.
+    // provider's permanent error), so init as cache-only rather than fail.
     if (this.provider instanceof CachingProvider) {
       this.initialized = true;
       return true;
-    }
-    if (!this.controller?.isAuthenticated) {
-      this.controller?.dispatchEvent(new CustomEvent('tts-need-auth'));
     }
     this.initialized = false;
     return false;

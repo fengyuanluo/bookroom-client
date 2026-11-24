@@ -5,7 +5,6 @@ import { useBookDataStore } from '@/store/bookDataStore';
 import { useReaderStore } from '@/store/readerStore';
 import { useBookProgress } from '@/store/readerProgressStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { useQuotaStats } from '@/hooks/useQuotaStats';
 import { useTranslation } from '@/hooks/useTranslation';
 import { debounce } from '@/utils/debounce';
 import { eventDispatcher } from '@/utils/event';
@@ -19,10 +18,7 @@ import {
   type FileSyncBackendKind,
 } from '@/services/sync/file/providerRegistry';
 import { canBackendRun } from '@/services/sync/file/runLibrarySync';
-import {
-  getActiveFileSyncBackends,
-  settingsKeyForBackend,
-} from '@/services/sync/cloudSyncProvider';
+import { resolveBookSyncGate, settingsKeyForBackend } from '@/services/sync/cloudSyncProvider';
 import { removeBookNoteOverlays } from '../utils/annotatorUtil';
 import { useWindowActiveChanged } from './useWindowActiveChanged';
 
@@ -122,13 +118,12 @@ export const useFileSync = (bookKey: string) => {
   // Reactive: triggers the auto-push effect on page turns.
   const progress = useBookProgress(bookKey);
 
-  const { userProfilePlan } = useQuotaStats();
-  // Every enabled third-party backend syncs this book in parallel (#5062);
-  // Readest Cloud's native progress sync is useProgressSync's job, not this
-  // hook's, and runs independently.
+  // Only the backend that owns this book syncs it (ADR 0010); BookRoom's native
+  // progress sync is useProgressSync's job, not this hook's.
+  const bookRemote = useBookDataStore((s) => s.getBookData(bookKey)?.book?.remote);
   const activeKinds = useMemo(
-    () => getActiveFileSyncBackends(settings, userProfilePlan ?? 'free'),
-    [settings, userProfilePlan],
+    () => resolveBookSyncGate(settings, { remote: bookRemote }).backends,
+    [settings, bookRemote],
   );
 
   /** Flips true on the first local change after a push, false right before each push. */
@@ -267,7 +262,12 @@ export const useFileSync = (bookKey: string) => {
         if (!canBackendRun(kind)) continue;
         const provider = await createFileSyncProvider(kind, current);
         if (!provider) continue;
-        const store = createAppLocalStore({ appService, settings: current, envConfig });
+        const store = createAppLocalStore({
+          appService,
+          settings: current,
+          envConfig,
+          remote: kind,
+        });
         built.push({ kind, engine: new FileSyncEngine(provider, store) });
       }
       if (!cancelled) setEngines(built);

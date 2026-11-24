@@ -1,5 +1,4 @@
 import { SystemSettings } from './settings';
-import type { RssFeed } from '@/types/rss';
 import { Book, BookConfig, BookContent, ImportBookOptions, ViewSettings } from './book';
 import { BookMetadata } from '@/libs/document';
 import type { BookNav } from '@/services/nav';
@@ -65,7 +64,7 @@ export interface FileSystem {
   getBlobURL(path: string, base: BaseDir): Promise<string>;
   getImageURL(path: string): Promise<string>;
   /** Returns a File whose name is the resolved basename, not the input path or URI. */
-  openFile(path: string, base: BaseDir, filename?: string, fetcher?: typeof fetch): Promise<File>;
+  openFile(path: string, base: BaseDir, filename?: string): Promise<File>;
   copyFile(srcPath: string, srcBase: BaseDir, dstPath: string, dstBase: BaseDir): Promise<void>;
   readFile(path: string, base: BaseDir, mode: 'text' | 'binary'): Promise<string | ArrayBuffer>;
   writeFile(path: string, base: BaseDir, content: string | ArrayBuffer | File): Promise<void>;
@@ -247,8 +246,6 @@ export interface AppService {
   saveBookNav(book: Book, nav: BookNav): Promise<void>;
   loadBookContent(book: Book): Promise<BookContent>;
   resolveNativeBookFilePath(book: Book): Promise<string | null>;
-  loadFeeds(): Promise<RssFeed[]>;
-  saveFeeds(feeds: RssFeed[]): Promise<void>;
   loadLibraryBooks(): Promise<Book[]>;
   requestCoverThumbnail(book: Book): void;
   saveLibraryBooks(books: Book[], options?: SaveLibraryBooksOptions): Promise<void>;

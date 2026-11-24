@@ -82,10 +82,7 @@ const CustomTTSServiceEditor: React.FC<CustomTTSServiceEditorProps> = ({ service
     setVoiceCount(null);
     const test: CustomTTSService = { ...cleaned(), id: 'test', addedAt: 0, updatedAt: 0 };
     try {
-      const provider = new OpenAICompatibleSpeechProvider(
-        () => [test],
-        async () => true,
-      );
+      const provider = new OpenAICompatibleSpeechProvider(() => [test]);
       const voices = await provider.getAllVoices();
       const { audio } = await provider.synthesize(
         {

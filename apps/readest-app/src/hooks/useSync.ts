@@ -7,6 +7,7 @@ import { recordFlow } from '@/services/sync/dataFlow/log';
 import type { FlowDirection } from '@/services/sync/dataFlow/types';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
 import { useSettingsStore } from '@/store/settingsStore';
+import { isBookRoomHash } from '@/services/remote';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { transformBookConfigFromDB } from '@/utils/transform';
 import { transformBookNoteFromDB } from '@/utils/transform';
@@ -355,6 +356,8 @@ export function useSync(bookKey?: string) {
     async (bookConfigs?: BookConfig[], bookId?: string, metaHash?: string, op: SyncOp = 'both') => {
       if (!bookId && !lastSyncedAtInited) return;
       if (!isSyncCategoryEnabled('progress')) return;
+      // Progress goes to BookRoom only for BookRoom's own books (ADR 0010).
+      if (bookId && !isBookRoomHash(bookId)) return;
       if ((op === 'push' || op === 'both') && bookConfigs?.length) {
         const pushed = await pushChanges({ configs: bookConfigs });
         if (pushed && bookId && bookKey) {
@@ -380,6 +383,7 @@ export function useSync(bookKey?: string) {
     async (bookNotes?: BookNote[], bookId?: string, metaHash?: string, op: SyncOp = 'both') => {
       if (!lastSyncedAtInited) return;
       if (!isSyncCategoryEnabled('note')) return;
+      if (bookId && !isBookRoomHash(bookId)) return;
       let pushed: boolean | undefined;
       if ((op === 'push' || op === 'both') && bookNotes?.length) {
         pushed = await pushChanges({ notes: bookNotes });

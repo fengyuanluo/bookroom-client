@@ -60,6 +60,7 @@ const makeBook = (over: Partial<Book> & Pick<Book, 'hash'>): Book => ({
   author: 'Author',
   createdAt: 1000,
   updatedAt: 1000,
+  remote: 'bookroom',
   ...over,
 });
 

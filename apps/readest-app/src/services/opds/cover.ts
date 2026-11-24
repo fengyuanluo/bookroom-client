@@ -4,7 +4,7 @@ import type { AppService } from '@/types/system';
 import type { OPDSGenericLink } from '@/types/opds';
 import { REL } from '@/types/opds';
 import { downloadFile } from '@/libs/storage';
-import { getProxiedURL, needsProxy, probeAuth } from '@/app/opds/utils/opdsReq';
+import { getProxiedURL, needsProxy, probeAuth, upstreamAuthHeader } from '@/app/opds/utils/opdsReq';
 import { READEST_OPDS_USER_AGENT } from '@/services/constants';
 import { getCoverFilename } from '@/utils/book';
 import { uniqueId } from '@/utils/misc';
@@ -100,7 +100,7 @@ export const applyOPDSCover = async ({
       allowSelfSignedCert,
     );
     if (authHeader) {
-      headers['Authorization'] = authHeader;
+      headers[upstreamAuthHeader(useProxy)] = authHeader;
     }
   }
 

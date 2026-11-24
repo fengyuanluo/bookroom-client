@@ -8,7 +8,6 @@ import type { EnvConfigType } from '@/services/environment';
 import type { ProgressHandler } from '@/utils/transfer';
 import type { TranslationFunc } from '@/hooks/useTranslation';
 import type { SystemSettings } from '@/types/settings';
-import type { UserPlan } from '@/types/quota';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useFileSyncStore } from '@/store/fileSyncStore';
@@ -17,8 +16,10 @@ import { hasValidWebDriveToken } from '@/services/sync/providers/gdrive/auth/web
 import { isICloudSupportedPlatform } from '@/services/sync/providers/icloud/buildICloudProvider';
 import {
   getActiveFileSyncBackends,
+  resolveBookSyncGate,
   settingsKeyForBackend,
 } from '@/services/sync/cloudSyncProvider';
+import { bookRemote } from '@/services/remote';
 import {
   createFileSyncProvider,
   type FileSyncBackendKind,
@@ -55,9 +56,7 @@ export const canBackendRun = (kind: FileSyncBackendKind): boolean => {
  */
 export const getReadyFileSyncBackends = (
   settings: SystemSettings | null | undefined,
-  plan?: UserPlan,
-): FileSyncBackendKind[] =>
-  getActiveFileSyncBackends(settings, plan).filter((k) => canBackendRun(k));
+): FileSyncBackendKind[] => getActiveFileSyncBackends(settings).filter((k) => canBackendRun(k));
 
 /** Build one backend's engine, or null when it cannot run here. */
 const buildEngine = async (
@@ -70,7 +69,7 @@ const buildEngine = async (
   const appService = await envConfig.getAppService();
   const fileProvider = await createFileSyncProvider(kind, settings, parentTransferId);
   if (!fileProvider) return null;
-  const store = createAppLocalStore({ appService, settings, envConfig });
+  const store = createAppLocalStore({ appService, settings, envConfig, remote: kind });
   return new FileSyncEngine(fileProvider, store);
 };
 
@@ -99,6 +98,24 @@ export const recordLibraryPassFailure = (connector: FileSyncBackendKind, error: 
   recordFlow({ ...bookFile(connector, 'push'), error });
 };
 
+/**
+ * A backend sees only its own books (ADR 0010): its library.json lists them,
+ * and books it holds that this device lacks join as its books — except those
+ * another remote already holds here.
+ */
+export const splitLibraryForBackend = (
+  library: Book[],
+  kind: FileSyncBackendKind,
+): { own: Book[]; foreignHashes: Set<string> } => {
+  const own: Book[] = [];
+  const foreignHashes = new Set<string>();
+  for (const book of library) {
+    if (bookRemote(book) === kind) own.push(book);
+    else if (!book.deletedAt) foreignHashes.add(book.hash);
+  }
+  return { own, foreignHashes };
+};
+
 /** One backend's library sync. Throws; the caller isolates the failure. */
 const syncOneBackend = async (
   envConfig: EnvConfigType,
@@ -121,7 +138,9 @@ const syncOneBackend = async (
   }
 
   const strategy = ps?.strategy ?? 'silent';
-  const result = await engine.syncLibrary(useLibraryStore.getState().library, {
+  const { own, foreignHashes } = splitLibraryForBackend(useLibraryStore.getState().library, kind);
+  const result = await engine.syncLibrary(own, {
+    foreignHashes,
     strategy: strategy === 'prompt' ? 'silent' : strategy,
     syncBooks: ps?.syncBooks ?? false,
     fullSync: false,
@@ -219,15 +238,13 @@ export const runFileLibrarySyncPass = async (
 };
 
 /**
- * Explicit per-book Upload, mirrored to EVERY enabled backend — the Book Details
- * / bookshelf cloud buttons call this alongside (or instead of) the Readest
- * Cloud transfer queue. Pushes the binary (HEAD short-circuited; an
- * already-mirrored file counts as success) plus the cover, best-effort per
- * backend. Succeeds when at least one backend took the book. Toasts are the
- * caller's job.
+ * Explicit per-book Upload to the backend that owns the book — the Book
+ * Details / bookshelf cloud buttons call this alongside the BookRoom transfer
+ * queue. Pushes the binary (HEAD short-circuited; an already-mirrored file
+ * counts as success) plus the cover. Toasts are the caller's job.
  */
 export const runFileBookUpload = async (envConfig: EnvConfigType, book: Book): Promise<boolean> => {
-  const backends = getActiveFileSyncBackends(useSettingsStore.getState().settings);
+  const backends = resolveBookSyncGate(useSettingsStore.getState().settings, book).backends;
   let anyUploaded = false;
   for (const kind of backends) {
     try {
@@ -256,10 +273,9 @@ export const runFileBookUpload = async (envConfig: EnvConfigType, book: Book): P
 
 /**
  * Explicit per-book Download (also reached when opening a book whose file is not
- * local). Tries the enabled backends in order and stops at the first one holding
- * the file — the mirrors are equivalent, so there is nothing to gain from asking
- * the rest. Stamps downloadedAt/coverDownloadedAt like the native download path;
- * persisting the book row (updateBook) and toasts are the caller's job.
+ * local) from the backend that owns the book. Stamps downloadedAt /
+ * coverDownloadedAt like the native download path; persisting the book row
+ * (updateBook) and toasts are the caller's job.
  */
 export const runFileBookDownload = async (
   envConfig: EnvConfigType,
@@ -267,7 +283,7 @@ export const runFileBookDownload = async (
   onProgress?: ProgressHandler,
   parentTransferId?: string,
 ): Promise<boolean> => {
-  const backends = getActiveFileSyncBackends(useSettingsStore.getState().settings);
+  const backends = resolveBookSyncGate(useSettingsStore.getState().settings, book).backends;
   for (const kind of backends) {
     try {
       const engine = await buildEngine(envConfig, kind, parentTransferId);

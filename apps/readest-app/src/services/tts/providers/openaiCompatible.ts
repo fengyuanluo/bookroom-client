@@ -196,14 +196,11 @@ export class OpenAICompatibleSpeechProvider implements SpeechProvider {
   readonly cacheable = true;
 
   // `getServices`: the enabled services, read on every call so edits apply
-  // without restarting Read Aloud. `isAllowed`: the premium gate.
-  constructor(
-    readonly getServices: () => CustomTTSService[],
-    private readonly isAllowed: () => Promise<boolean>,
-  ) {}
+  // without restarting Read Aloud.
+  constructor(readonly getServices: () => CustomTTSService[]) {}
 
   async init(): Promise<boolean> {
-    return this.getServices().length > 0 && (await this.isAllowed());
+    return this.getServices().length > 0;
   }
 
   async getAllVoices(): Promise<TTSVoice[]> {

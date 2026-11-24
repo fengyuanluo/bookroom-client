@@ -64,12 +64,8 @@ import {
   CJK_EXCLUDE_PATTENS,
   CJK_FONTS_PATTENS,
   BOOK_IDS_SEPARATOR,
-  DOWNLOAD_READEST_URL,
-  READEST_WEB_BASE_URL,
-  READEST_NODE_BASE_URL,
   READEST_UPDATER_FILE,
   READEST_CHANGELOG_FILE,
-  READEST_PUBLIC_STORAGE_BASE_URL,
   READEST_OPDS_USER_AGENT,
   SYNC_PROGRESS_INTERVAL_SEC,
   SYNC_NOTES_INTERVAL_SEC,
@@ -79,8 +75,6 @@ import {
   MIN_ZOOM_LEVEL,
   ZOOM_STEP,
   SHOW_UNREAD_STATUS_BADGE,
-  DEFAULT_STORAGE_QUOTA,
-  DEFAULT_DAILY_TRANSLATION_QUOTA,
   DOUBLE_CLICK_INTERVAL_THRESHOLD_MS,
   DISABLE_DOUBLE_CLICK_ON_MOBILE,
   LONG_HOLD_THRESHOLD,
@@ -238,7 +232,6 @@ describe('services/constants', () => {
       expect(typeof DEFAULT_SYSTEM_SETTINGS.autohideCursor).toBe('boolean');
       expect(typeof DEFAULT_SYSTEM_SETTINGS.openLastBooks).toBe('boolean');
       expect(typeof DEFAULT_SYSTEM_SETTINGS.autoImportBooksOnOpen).toBe('boolean');
-      expect(typeof DEFAULT_SYSTEM_SETTINGS.telemetryEnabled).toBe('boolean');
       expect(typeof DEFAULT_SYSTEM_SETTINGS.discordRichPresenceEnabled).toBe('boolean');
     });
 
@@ -258,7 +251,6 @@ describe('services/constants', () => {
         font: true,
         texture: true,
         opds_catalog: true,
-        abs_server: true,
         custom_translator: true,
         custom_tts: true,
         settings: true,
@@ -887,18 +879,6 @@ describe('services/constants', () => {
       expect(BOOK_IDS_SEPARATOR.length).toBe(1);
     });
 
-    it('DOWNLOAD_READEST_URL is a valid URL', () => {
-      expect(DOWNLOAD_READEST_URL).toMatch(/^https:\/\//);
-    });
-
-    it('READEST_WEB_BASE_URL is a valid URL', () => {
-      expect(READEST_WEB_BASE_URL).toMatch(/^https:\/\//);
-    });
-
-    it('READEST_NODE_BASE_URL is a valid URL', () => {
-      expect(READEST_NODE_BASE_URL).toMatch(/^https:\/\//);
-    });
-
     it('READEST_UPDATER_FILE is a URL ending with .json', () => {
       expect(READEST_UPDATER_FILE).toMatch(/^https:\/\//);
       expect(READEST_UPDATER_FILE).toMatch(/\.json$/);
@@ -907,10 +887,6 @@ describe('services/constants', () => {
     it('READEST_CHANGELOG_FILE is a URL ending with .json', () => {
       expect(READEST_CHANGELOG_FILE).toMatch(/^https:\/\//);
       expect(READEST_CHANGELOG_FILE).toMatch(/\.json$/);
-    });
-
-    it('READEST_PUBLIC_STORAGE_BASE_URL is a valid URL', () => {
-      expect(READEST_PUBLIC_STORAGE_BASE_URL).toMatch(/^https:\/\//);
     });
 
     it('READEST_OPDS_USER_AGENT is a non-empty string', () => {
@@ -994,43 +970,6 @@ describe('services/constants', () => {
     it('SIZE_PER_TIME_UNIT is a positive number', () => {
       expect(typeof SIZE_PER_TIME_UNIT).toBe('number');
       expect(SIZE_PER_TIME_UNIT).toBeGreaterThan(0);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Quota constants
-  // ---------------------------------------------------------------------------
-  describe('quota constants', () => {
-    it('DEFAULT_STORAGE_QUOTA has all plan tiers', () => {
-      expect(typeof DEFAULT_STORAGE_QUOTA).toBe('object');
-      expect(typeof DEFAULT_STORAGE_QUOTA.free).toBe('number');
-      expect(typeof DEFAULT_STORAGE_QUOTA.plus).toBe('number');
-      expect(typeof DEFAULT_STORAGE_QUOTA.pro).toBe('number');
-      expect(typeof DEFAULT_STORAGE_QUOTA.purchase).toBe('number');
-    });
-
-    it('DEFAULT_STORAGE_QUOTA tiers are in ascending order (except purchase)', () => {
-      expect(DEFAULT_STORAGE_QUOTA.free).toBeGreaterThan(0);
-      expect(DEFAULT_STORAGE_QUOTA.plus).toBeGreaterThan(DEFAULT_STORAGE_QUOTA.free);
-      expect(DEFAULT_STORAGE_QUOTA.pro).toBeGreaterThan(DEFAULT_STORAGE_QUOTA.plus);
-    });
-
-    it('DEFAULT_DAILY_TRANSLATION_QUOTA has all plan tiers', () => {
-      expect(typeof DEFAULT_DAILY_TRANSLATION_QUOTA).toBe('object');
-      expect(typeof DEFAULT_DAILY_TRANSLATION_QUOTA.free).toBe('number');
-      expect(typeof DEFAULT_DAILY_TRANSLATION_QUOTA.plus).toBe('number');
-      expect(typeof DEFAULT_DAILY_TRANSLATION_QUOTA.pro).toBe('number');
-      expect(typeof DEFAULT_DAILY_TRANSLATION_QUOTA.purchase).toBe('number');
-    });
-
-    it('DEFAULT_DAILY_TRANSLATION_QUOTA tiers are in ascending order (except purchase)', () => {
-      expect(DEFAULT_DAILY_TRANSLATION_QUOTA.free).toBeGreaterThan(0);
-      expect(DEFAULT_DAILY_TRANSLATION_QUOTA.plus).toBeGreaterThan(
-        DEFAULT_DAILY_TRANSLATION_QUOTA.free,
-      );
-      expect(DEFAULT_DAILY_TRANSLATION_QUOTA.pro).toBeGreaterThan(
-        DEFAULT_DAILY_TRANSLATION_QUOTA.plus,
-      );
     });
   });
 

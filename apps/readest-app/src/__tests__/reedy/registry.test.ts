@@ -19,7 +19,7 @@ function settings(overrides: Partial<AISettings> = {}): AISettings {
 describe('createReedyModels — chat metadata table', () => {
   it('routes Gemini 2.5 models to the 2M context window', () => {
     const { chat } = createReedyModels(
-      settings({ provider: 'ai-gateway', aiGatewayModel: 'google/gemini-2.5-flash-lite' }),
+      settings({ provider: 'openrouter', openrouterModel: 'google/gemini-2.5-flash-lite' }),
     );
     expect(chat.id).toBe('google/gemini-2.5-flash-lite');
     expect(chat.contextWindow).toBe(2_000_000);
@@ -28,7 +28,7 @@ describe('createReedyModels — chat metadata table', () => {
 
   it('routes GPT-5 family to a 128K context window', () => {
     const { chat } = createReedyModels(
-      settings({ provider: 'ai-gateway', aiGatewayModel: 'openai/gpt-5-nano' }),
+      settings({ provider: 'openrouter', openrouterModel: 'openai/gpt-5-nano' }),
     );
     expect(chat.contextWindow).toBe(128_000);
     expect(chat.supportsTools).toBe(true);
@@ -36,7 +36,7 @@ describe('createReedyModels — chat metadata table', () => {
 
   it('routes Llama 4 to 128K with tool support', () => {
     const { chat } = createReedyModels(
-      settings({ provider: 'ai-gateway', aiGatewayModel: 'meta/llama-4-scout' }),
+      settings({ provider: 'openrouter', openrouterModel: 'meta/llama-4-scout' }),
     );
     expect(chat.contextWindow).toBe(128_000);
     expect(chat.supportsTools).toBe(true);
@@ -51,26 +51,14 @@ describe('createReedyModels — chat metadata table', () => {
 
   it('falls back to a conservative 8K default for unknown model ids', () => {
     const { chat } = createReedyModels(
-      settings({ provider: 'ai-gateway', aiGatewayModel: 'unknown/strange-future-model' }),
+      settings({ provider: 'openrouter', openrouterModel: 'unknown/strange-future-model' }),
     );
     expect(chat.contextWindow).toBe(8_192);
     expect(chat.supportsTools).toBe(false);
   });
 
-  it('prefers the AI Gateway custom-model field over the dropdown selection', () => {
-    const { chat } = createReedyModels(
-      settings({
-        provider: 'ai-gateway',
-        aiGatewayModel: 'openai/gpt-5-nano',
-        aiGatewayCustomModel: 'anthropic/claude-opus-4-7',
-      }),
-    );
-    expect(chat.id).toBe('anthropic/claude-opus-4-7');
-    expect(chat.contextWindow).toBe(200_000);
-  });
-
   it('returns the underlying Vercel SDK model via getLanguageModel()', () => {
-    const { chat } = createReedyModels(settings({ provider: 'ai-gateway' }));
+    const { chat } = createReedyModels(settings({ provider: 'openrouter' }));
     expect(chat.getLanguageModel()).toEqual({ __mock: 'language-model' });
   });
 });
@@ -85,7 +73,7 @@ describe('createReedyModels — embedding routing', () => {
   });
 
   it('uses larger batchSize for hosted providers', () => {
-    const { embedding } = createReedyModels(settings({ provider: 'ai-gateway' }));
+    const { embedding } = createReedyModels(settings({ provider: 'openrouter' }));
     expect(embedding.batchSize).toBe(16);
   });
 
@@ -97,7 +85,7 @@ describe('createReedyModels — embedding routing', () => {
   });
 
   it('embedding.dim throws if called before any embed() round-trip', () => {
-    const { embedding } = createReedyModels(settings({ provider: 'ai-gateway' }));
+    const { embedding } = createReedyModels(settings({ provider: 'openrouter' }));
     expect(() => embedding.dim).toThrow(/dim unknown/);
   });
 });

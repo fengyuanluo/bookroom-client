@@ -1,7 +1,6 @@
 import type { RefObject } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useAppRouter } from '@/hooks/useAppRouter';
-import { useABSSync } from '@/hooks/useABSSync';
 import { useOPDSSubscriptions } from '@/hooks/useOPDSSubscriptions';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -15,14 +14,12 @@ export function useLibraryRefresh(
   const { user } = useAuth();
   const router = useAppRouter();
   const { checkOPDSSubscriptions } = useOPDSSubscriptions();
-  const { checkABSServers } = useABSSync();
 
   const refresh = async (fullRefresh: boolean) => {
     const { settings } = useSettingsStore.getState();
     const hasExternalSources =
       getActiveFileSyncBackends(settings).length > 0 ||
       settings.opdsCatalogs?.some((c) => !c.disabled && !c.deletedAt) ||
-      settings.absServers?.some((s) => !s.disabled && !s.deletedAt) ||
       settings.kosync?.enabled ||
       settings.bookorbit?.enabled;
     if (!user && !hasExternalSources) {
@@ -31,7 +28,6 @@ export function useLibraryRefresh(
     }
     await pullLibrary(fullRefresh, true);
     await checkOPDSSubscriptions(true);
-    await checkABSServers();
   };
 
   usePullToRefresh(

@@ -18,7 +18,7 @@ describe('statsSync', () => {
     await stats.insertPageEvent(id, { page: 1, startTime: 100, duration: 5, totalPages: 9 });
     await stats.insertPageEvent(id, { page: 2, startTime: 200, duration: 6, totalPages: 9 });
     const client = { pushChanges: vi.fn().mockResolvedValue({}) };
-    await pushStats(stats, client as never);
+    await pushStats(stats, client as never, () => true);
     const sent = client.pushChanges.mock.calls[0]![0];
     expect(sent.statPages.map((p: { start_time: number }) => p.start_time)).toEqual([100, 200]);
     expect(await stats.getCursor('push')).toBe(200);
@@ -55,7 +55,7 @@ describe('statsSync', () => {
       await stats.insertPageEvent(id, { page: t, startTime: t, duration: 1, totalPages: 999 });
     }
     const client = { pushChanges: vi.fn().mockResolvedValue({}) };
-    await pushStats(stats, client as never);
+    await pushStats(stats, client as never, () => true);
     expect(client.pushChanges).toHaveBeenCalledTimes(2);
     expect(client.pushChanges.mock.calls[0]![0].statPages.length).toBe(500);
     expect(client.pushChanges.mock.calls[1]![0].statPages.length).toBe(100);

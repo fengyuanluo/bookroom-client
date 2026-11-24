@@ -5,10 +5,8 @@ describe('parseBookDeepLink', () => {
   it('parses the custom-scheme book-open form', () => {
     expect(parseBookDeepLink('readest://book/abc123')).toEqual({ bookHash: 'abc123' });
   });
-  it('parses the web form', () => {
-    expect(parseBookDeepLink('https://web.readest.com/o/book/abc123')).toEqual({
-      bookHash: 'abc123',
-    });
+  it('does not match the removed official web host', () => {
+    expect(parseBookDeepLink('https://web.readest.com/o/book/abc123')).toBeNull();
   });
   it('surfaces the Android Auto autoplay flag', () => {
     expect(parseBookDeepLink('readest://book/abc123?autoplay=tts')).toEqual({

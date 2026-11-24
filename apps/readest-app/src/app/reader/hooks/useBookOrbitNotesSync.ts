@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useEnv } from '@/context/EnvContext';
 import { recordExchange } from '@/services/sync/dataFlow/log';
+import { progressSyncOf } from '@/services/remote';
 import type { ChapterResolver, PositionResolver } from '@/services/bookorbit/annotationExchange';
 import { BookOrbitClient } from '@/services/bookorbit/BookOrbitClient';
 import { BookOrbitSyncStore } from '@/services/bookorbit/BookOrbitSyncStore';
@@ -183,6 +184,8 @@ export const useBookOrbitNotesSync = (bookKey: string) => {
     const config = getConfig(bookKey);
     if (!book || !bookData?.bookDoc || !config?.location) return;
     if (FIXED_LAYOUT_FORMATS.has(book.format)) return;
+    // Only books of a catalog that syncs through BookOrbit (ADR 0010).
+    if (progressSyncOf(settings, book) !== 'bookorbit') return;
     if (passRunning.current) return;
 
     passRunning.current = true;

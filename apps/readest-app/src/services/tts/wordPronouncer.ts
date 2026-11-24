@@ -1,6 +1,5 @@
 import { AppService } from '@/types/system';
-import { EdgeSpeechTTS, EdgeTTSPayload } from '@/libs/edgeTTS';
-import { isTauriAppPlatform } from '@/services/environment';
+import { EdgeSpeechTTS } from '@/libs/edgeTTS';
 import { isSameLang } from '@/utils/lang';
 import { genSSMLRaw } from '@/utils/ssml';
 import { TTSClient } from './TTSClient';
@@ -15,8 +14,8 @@ import type { TTSAudioContext } from './WebAudioPlayer';
 // trip synthesizing "test") and never spins up a full speaking session — it
 // calls EdgeSpeechTTS directly (whose static MP3 cache makes repeat words
 // instant) and schedules one chunk on a dedicated Web Audio context. Edge is
-// tried first while online (wss, then the authenticated https proxy); offline
-// requests and Edge failures use the platform speech client. See issue #4876.
+// tried first while online; offline requests and Edge failures use the
+// platform speech client. See issue #4876.
 
 const EDGE_TTS_NAME = 'edge-tts';
 const DEFAULT_EDGE_VOICE = 'en-US-AriaNeural';
@@ -52,8 +51,7 @@ const getPlayer = (): WebAudioPlayer | null => {
 
 // Reused across calls; EdgeSpeechTTS keeps its MP3/boundary caches on static
 // members, so this just avoids per-call allocation.
-const edgeWss = new EdgeSpeechTTS('wss');
-const edgeHttps = new EdgeSpeechTTS('https');
+const edge = new EdgeSpeechTTS();
 
 // Bumped on every new request so a slower in-flight synth/fetch can detect it
 // has been superseded and bail before touching the player or status.
@@ -83,21 +81,6 @@ export const cancelWordPronounce = (): void => {
   getPlayer()?.abortSession();
   stopFallback();
 };
-
-// Edge audio bytes: direct wss first; on failure the authenticated https proxy
-// (the reader's own fallback for browsers that block Bing). The proxy throws
-// "Not authenticated" when logged out, which propagates to the speech fallback.
-// On Tauri the native wss transport is the only Edge path — never retry via
-// the proxy (a cross-origin /api/tts/edge request, e.g. fired when offline).
-const fetchEdgeAudio = async (payload: EdgeTTSPayload): Promise<ArrayBuffer> => {
-  try {
-    return (await edgeWss.createAudioData(payload)).data;
-  } catch (err) {
-    if (isTauriAppPlatform()) throw err;
-    return (await edgeHttps.createAudioData(payload)).data;
-  }
-};
-
 const speakViaFallback = async (
   word: string,
   lang: string,
@@ -164,7 +147,7 @@ export const pronounceWord = async (
   if (player && !isOffline) {
     try {
       const voice = pickEdgeVoiceId(voiceLang);
-      const data = await fetchEdgeAudio({
+      const { data } = await edge.createAudioData({
         lang: voiceLang,
         text: trimmed,
         voice,

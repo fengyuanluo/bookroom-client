@@ -5,13 +5,11 @@ import { Book } from '@/types/book';
 import { getBookWithUpdatedMetadata } from '@/utils/book';
 import { BookMetadata } from '@/libs/document';
 import { useEnv } from '@/context/EnvContext';
-import { useAuth } from '@/context/AuthContext';
 import { useThemeStore } from '@/store/themeStore';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useMetadataEdit } from './useMetadataEdit';
 import { DeleteAction } from '@/types/system';
 import { eventDispatcher } from '@/utils/event';
-import { isAbsOfflineCapable } from '@/utils/audiobook';
 import { isWebAppPlatform } from '@/services/environment';
 import DeleteConfirmAlert from '@/components/DeleteConfirmAlert';
 import Dialog from '@/components/Dialog';
@@ -31,8 +29,6 @@ interface BookDetailModalProps {
   handleBookDeleteLocalCopy?: (book: Book) => void;
   handleBookPurge?: (book: Book) => void;
   handleBookMetadataUpdate?: (book: Book, updatedMetadata: BookMetadata, tags: string[]) => void;
-  handleBookOfflineDownload?: (book: Book) => void;
-  offlinePremiumLabel?: string;
   onMetadataValueClick?: (type: 'tag' | 'subject', value: string) => void;
 }
 
@@ -58,13 +54,10 @@ const BookDetailModal: React.FC<BookDetailModalProps> = ({
   handleBookDeleteLocalCopy,
   handleBookPurge,
   handleBookMetadataUpdate,
-  handleBookOfflineDownload,
-  offlinePremiumLabel,
   onMetadataValueClick,
 }) => {
   const _ = useTranslation();
   const { envConfig, appService } = useEnv();
-  const { user } = useAuth();
   const { safeAreaInsets } = useThemeStore();
   const [activeDeleteAction, setActiveDeleteAction] = useState<DeleteMenuAction | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -198,14 +191,6 @@ const BookDetailModal: React.FC<BookDetailModalProps> = ({
   const handleDeleteCloudBackup = () => handleDeleteAction('cloud');
   const handleDeleteLocalCopy = () => handleDeleteAction('local');
 
-  const handleShare = () => {
-    // Close this modal first, then hand off to the share dialog hosted by
-    // Bookshelf (it owns the login gate + ShareBookDialog). Mirrors how the
-    // bookshelf context menu dispatches the same event.
-    handleClose();
-    eventDispatcher.dispatch('show-share-dialog', { book });
-  };
-
   const handleBookExport = async () => {
     setIsLoading(true);
     setTimeout(async () => {
@@ -227,22 +212,12 @@ const BookDetailModal: React.FC<BookDetailModalProps> = ({
     }
   };
 
-  const handleOfflineDownload = () => {
-    handleClose();
-    handleBookOfflineDownload?.(book);
-  };
-
   const handleReupload = async () => {
     handleClose();
     if (handleBookUpload) {
       handleBookUpload(book);
     }
   };
-
-  // Sharing uploads the book to the Readest backend and mints a public link, so
-  // it needs a signed-in user and a resolvable on-disk file. `fileSize` is only
-  // non-null when getBookFileSize could actually open the local file.
-  const shareEnabled = !!user && fileSize !== null;
 
   const currentDeleteConfig = activeDeleteAction ? deleteConfigs[activeDeleteAction] : null;
 
@@ -283,7 +258,6 @@ const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 book={displayBook}
                 metadata={bookMeta}
                 fileSize={fileSize}
-                shareEnabled={shareEnabled}
                 onEdit={handleBookMetadataUpdate ? handleEditMetadata : undefined}
                 onDelete={handleBookDelete ? handleDelete : undefined}
                 onDeleteCloudBackup={
@@ -292,14 +266,7 @@ const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 onDeleteLocalCopy={handleBookDeleteLocalCopy ? handleDeleteLocalCopy : undefined}
                 onDownload={handleBookDownload ? handleRedownload : undefined}
                 onUpload={handleBookUpload ? handleReupload : undefined}
-                onShare={handleShare}
                 onExport={handleBookExport}
-                onDownloadOffline={
-                  handleBookOfflineDownload && isAbsOfflineCapable(book)
-                    ? handleOfflineDownload
-                    : undefined
-                }
-                offlinePremiumLabel={offlinePremiumLabel}
                 onMetadataValueClick={onMetadataValueClick}
               />
             )}

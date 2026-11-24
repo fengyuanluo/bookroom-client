@@ -158,14 +158,9 @@ describe('TTSPanel inline reading annotations', () => {
   });
 });
 
-const encode = (part: object) => Buffer.from(JSON.stringify(part)).toString('base64url');
-const sessionToken = (claims: object) => `${encode({ alg: 'none' })}.${encode(claims)}.sig`;
-
 const getCustomServicesRow = () =>
   screen.getByText('Custom TTS Services').closest('button') as HTMLButtonElement;
 
-// Custom TTS services are premium: free and signed-out readers see the row
-// with a Premium badge that routes to the upgrade page or sign-in.
 describe('TTSPanel audio cache', () => {
   afterEach(cleanup);
 
@@ -176,34 +171,14 @@ describe('TTSPanel audio cache', () => {
   });
 });
 
-describe('TTSPanel custom TTS services premium gate', () => {
+describe('TTSPanel custom TTS services', () => {
   beforeEach(() => {
-    state.token = null;
-    state.user = null;
     state.push.mockReset();
   });
 
   afterEach(cleanup);
 
-  it('sends a signed-out reader to sign in', () => {
-    render(<TTSPanel bookKey='book-1' onRegisterReset={vi.fn()} />);
-    expect(getCustomServicesRow().textContent).toContain('Premium');
-    fireEvent.click(getCustomServicesRow());
-    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/auth\?redirect=/));
-  });
-
-  it('sends a free user to the plans page', () => {
-    state.token = sessionToken({ plan: 'free' });
-    state.user = { id: 'u' };
-    render(<TTSPanel bookKey='book-1' onRegisterReset={vi.fn()} />);
-    fireEvent.click(getCustomServicesRow());
-    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/user\?redirect=/));
-    expect(screen.queryByText('Add TTS Service')).toBeNull();
-  });
-
-  it('opens the services page for Full Customization', () => {
-    state.token = sessionToken({ plan: 'free', customization_purchased: true });
-    state.user = { id: 'u' };
+  it('opens the services page', () => {
     render(<TTSPanel bookKey='book-1' onRegisterReset={vi.fn()} />);
     expect(getCustomServicesRow().textContent).not.toContain('Premium');
     fireEvent.click(getCustomServicesRow());

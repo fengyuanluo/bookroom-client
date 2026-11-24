@@ -1,12 +1,8 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { marked, type Token } from 'marked';
-import {
-  NOTION_API_BASE_URL,
-  NOTION_API_VERSION,
-  READEST_WEB_BASE_URL,
-} from '@/services/constants';
-import { isTauriAppPlatform } from '@/services/environment';
-import { getAccessToken } from '@/utils/access';
+import { NOTION_API_BASE_URL, NOTION_API_VERSION } from '@/services/constants';
+import { getAPIBaseUrl, getBaseUrl, isTauriAppPlatform } from '@/services/environment';
+import { bookRoomProxyHeaders } from '@/services/bookroom/proxy';
 import type { BookNote, HighlightColor } from '@/types/book';
 import type { NotionSettings } from '@/types/settings';
 import {
@@ -380,8 +376,19 @@ const renderTemplate = (note: BookNote, chapter: string | null, template: NoteTe
 };
 
 // Markers identify the sync's own blocks on a page. They are links readers can
-// open: the book in the web reader, and each note's annotation page.
-const bookMarkerUrl = (bookHash: string): string => `${READEST_WEB_BASE_URL}/reader/${bookHash}`;
+// open: the book in the BookRoom web reader, and each note's annotation page.
+const bookMarkerUrl = (bookHash: string): string =>
+  `${getBaseUrl()}/reader?${new URLSearchParams({ ids: bookHash }).toString()}`;
+
+// A book marker written against any BookRoom server address.
+const isBookMarkerUrl = (url: string, bookHash: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return /\/reader\/?$/.test(parsed.pathname) && parsed.searchParams.get('ids') === bookHash;
+  } catch {
+    return false;
+  }
+};
 
 const noteMarkerUrl = (
   bookHash: string,
@@ -417,7 +424,7 @@ const legacyMarkerSegments = (url: string): string[] | null => {
 
 const isBookMarker = (block: NotionBlock, bookHash: string): boolean =>
   blockLinks(block).some((url) => {
-    if (url === bookMarkerUrl(bookHash)) return true;
+    if (isBookMarkerUrl(url, bookHash)) return true;
     const segments = legacyMarkerSegments(url);
     return segments?.length === 2 && segments[0] === 'book' && segments[1] === bookHash;
   });
@@ -493,23 +500,19 @@ export class NotionClient {
   }
 
   /**
-   * Web builds go through `/api/notion`, which authenticates the Readest user
-   * and only then forwards the Notion secret upstream. So the two credentials
-   * travel in separate headers: `Authorization` carries the Readest JWT and
-   * `X-Notion-Token` carries the integration secret. Desktop and mobile talk to
-   * api.notion.com directly and put the Notion secret in `Authorization`.
+   * Web builds go through BookRoom's `/api/notion`, which authenticates the
+   * BookRoom user and only then forwards the Notion secret upstream. So the two
+   * credentials travel in separate headers: `Authorization` carries the
+   * BookRoom token and `X-Notion-Token` the integration secret. Desktop and
+   * mobile talk to api.notion.com directly and put the Notion secret in
+   * `Authorization`.
    */
-  private async proxyHeaders(body?: string): Promise<Record<string, string>> {
-    const readestToken = await getAccessToken();
-    if (!readestToken) {
-      throw new Error('Notion sync requires signing in to Readest on the web');
-    }
-    return {
-      Authorization: `Bearer ${readestToken}`,
+  private proxyHeaders(body?: string): Promise<Record<string, string>> {
+    return bookRoomProxyHeaders({
       'X-Notion-Token': `Bearer ${this.token}`,
       'Notion-Version': NOTION_API_VERSION,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
-    };
+    });
   }
 
   private async request(
@@ -530,7 +533,7 @@ export class NotionClient {
             headers: nativeHeaders,
             body,
           })
-        : await globalThis.fetch(`/api/notion${path}`, {
+        : await globalThis.fetch(`${getAPIBaseUrl()}/notion${path}`, {
             method,
             headers: await this.proxyHeaders(body),
             body,

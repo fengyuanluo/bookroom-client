@@ -17,7 +17,8 @@ vi.mock('@/utils/misc', async (importOriginal) => {
   };
 });
 
-vi.mock('@/services/environment', () => ({
+vi.mock('@/services/environment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/environment')>()),
   isPWA: vi.fn().mockReturnValue(false),
 }));
 

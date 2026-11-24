@@ -74,7 +74,7 @@ describe('quote card layouts', () => {
             }
           }
           // The signature comes only with the QR code.
-          expect(texts(layout.elements).includes('Readest')).toBe(!!qrUrl);
+          expect(texts(layout.elements).includes('BookRoom')).toBe(!!qrUrl);
           expect(layout.elements.some((e) => e.type === 'image' && e.image !== 'cover')).toBe(
             false,
           );
@@ -112,12 +112,12 @@ describe('quote card layouts', () => {
     }
   });
 
-  test('signs the card "Readest" in the chapter and date style', () => {
+  test('signs the card "BookRoom" in the chapter and date style', () => {
     const layout = QUOTE_CARD_LAYOUTS.classic(input({ qrUrl: QR_URL }), measure);
     const textEls = layout.elements.filter(
       (e): e is Extract<QuoteCardElement, { type: 'text' }> => e.type === 'text',
     );
-    const mark = textEls.find((e) => e.text === 'Readest')!;
+    const mark = textEls.find((e) => e.text === 'BookRoom')!;
     const meta = textEls.find((e) => e.text.startsWith('Acts Of The Apostles'))!;
     expect(mark.color).toBe(meta.color);
     expect(mark.alpha ?? 1).toBe(meta.alpha ?? 1);
@@ -129,7 +129,7 @@ describe('quote card layouts', () => {
     const textEls = layout.elements.filter(
       (e): e is Extract<QuoteCardElement, { type: 'text' }> => e.type === 'text',
     );
-    const mark = textEls.find((e) => e.text === 'Readest')!;
+    const mark = textEls.find((e) => e.text === 'BookRoom')!;
     const meta = textEls.find((e) => e.text.startsWith('Acts Of The Apostles'))!;
     expect(mark.y).toBe(meta.y);
     expect(mark.align).toBe('right');
@@ -163,7 +163,7 @@ describe('quote card layouts', () => {
     const textEls = layout.elements.filter(
       (e): e is Extract<QuoteCardElement, { type: 'text' }> => e.type === 'text',
     );
-    const mark = textEls.find((e) => e.text === 'Readest')!;
+    const mark = textEls.find((e) => e.text === 'BookRoom')!;
     const meta = textEls.find((e) => e.text.startsWith('Acts Of The Apostles'))!;
     if (qr.type !== 'qr' || cover.type !== 'image') throw new Error('missing qr or cover');
     expect(qr.x + qr.w).toBe(layout.width - 96);

@@ -3,26 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AudiobookChapterMapping, PairedAudiobook } from '@/types/book';
 import {
   importPairedAudiobook,
-  persistStreamedPairedAudiobook,
   replacePairedAudiobook,
   removePairedAudiobook,
   type AudiobookStorage,
 } from '@/services/audiobook/storage';
-
-// A pairing streamed from an Audiobookshelf server: nothing of it is on disk.
-const streamed: PairedAudiobook = {
-  version: 1,
-  files: [{ id: 'abs', name: 'Book', path: 'abs://srv1/item1', duration: 100 }],
-  chapters: [],
-  mappings: [{ ebookChapterId: 'ch1.xhtml', audioChapterId: 'abs:0' }],
-  createdAt: 2,
-  source: {
-    kind: 'audiobookshelf',
-    serverId: 'srv1',
-    itemId: 'item1',
-    tracks: [{ index: 1, startOffset: 0, duration: 100, contentUrl: '/api/items/item1/file/1' }],
-  },
-};
 
 const makeStorage = (): AudiobookStorage => ({
   createDir: vi.fn().mockResolvedValue(undefined),
@@ -166,87 +150,14 @@ describe('paired audiobook storage', () => {
 
   it('removes only the paired-audio directory', async () => {
     const storage = makeStorage();
-    const association: PairedAudiobook = {
-      version: 1,
-      files: [],
-      chapters: [],
-      mappings: [],
-      createdAt: 1,
-    };
-
     const persist = vi.fn().mockResolvedValue(undefined);
-    await removePairedAudiobook(storage, 'book-hash', association, persist);
+    await removePairedAudiobook(storage, 'book-hash', persist);
 
     expect(persist).toHaveBeenCalledWith(undefined);
     expect(storage.deleteDir).toHaveBeenCalledWith('book-hash/audiobook', 'Books', true);
     expect(persist.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(storage.deleteDir).mock.invocationCallOrder[0]!,
     );
-  });
-
-  it('unpairs a streamed audiobook without touching the book directory', async () => {
-    const storage = makeStorage();
-    const persist = vi.fn().mockResolvedValue(undefined);
-
-    await removePairedAudiobook(storage, 'book-hash', streamed, persist);
-
-    expect(persist).toHaveBeenCalledWith(undefined);
-    expect(storage.deleteDir).not.toHaveBeenCalled();
-    expect(storage.deleteFile).not.toHaveBeenCalled();
-  });
-
-  it('persists a streamed pairing, then deletes the local files of the pairing it replaces', async () => {
-    const storage = makeStorage();
-    const previous: PairedAudiobook = {
-      version: 1,
-      files: [
-        { id: 'audio-0', name: 'a.mp3', path: 'book-hash/audiobook/1-audio-0-a.mp3', duration: 1 },
-        { id: 'audio-1', name: 'b.mp3', path: 'other-hash/audiobook/1-audio-1-b.mp3', duration: 1 },
-      ],
-      chapters: [],
-      mappings: [],
-      createdAt: 1,
-    };
-    const persist = vi.fn().mockResolvedValue(undefined);
-
-    const result = await persistStreamedPairedAudiobook(
-      storage,
-      'book-hash',
-      streamed,
-      previous,
-      persist,
-    );
-
-    expect(result).toBe(streamed);
-    expect(persist).toHaveBeenCalledWith(streamed);
-    expect(storage.copyFile).not.toHaveBeenCalled();
-    expect(storage.writeFile).not.toHaveBeenCalled();
-    expect(storage.createDir).not.toHaveBeenCalled();
-    expect(storage.deleteFile).toHaveBeenCalledTimes(1);
-    expect(storage.deleteFile).toHaveBeenCalledWith('book-hash/audiobook/1-audio-0-a.mp3', 'Books');
-    expect(persist.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(storage.deleteFile).mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it('keeps the previous local files when persisting a streamed pairing fails', async () => {
-    const storage = makeStorage();
-    const previous: PairedAudiobook = {
-      version: 1,
-      files: [
-        { id: 'audio-0', name: 'a.mp3', path: 'book-hash/audiobook/1-audio-0-a.mp3', duration: 1 },
-      ],
-      chapters: [],
-      mappings: [],
-      createdAt: 1,
-    };
-    const persist = vi.fn().mockRejectedValue(new Error('disk full'));
-
-    await expect(
-      persistStreamedPairedAudiobook(storage, 'book-hash', streamed, previous, persist),
-    ).rejects.toThrow('disk full');
-
-    expect(storage.deleteFile).not.toHaveBeenCalled();
   });
 
   it('persists a replacement before deleting files left behind by the previous pairing', async () => {
@@ -396,19 +307,11 @@ describe('paired audiobook storage', () => {
 
   it('does not remove files when clearing the persisted association fails', async () => {
     const storage = makeStorage();
-    const association: PairedAudiobook = {
-      version: 1,
-      files: [],
-      chapters: [],
-      mappings: [],
-      createdAt: 1,
-    };
 
     await expect(
       removePairedAudiobook(
         storage,
         'book-hash',
-        association,
         vi.fn().mockRejectedValue(new Error('config write failed')),
       ),
     ).rejects.toThrow('config write failed');

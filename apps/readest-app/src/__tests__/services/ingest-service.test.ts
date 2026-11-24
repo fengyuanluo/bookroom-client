@@ -20,6 +20,7 @@ function makeBook(overrides: Partial<Book> = {}): Book {
     author: 'Author',
     createdAt: 1000,
     updatedAt: 2000,
+    remote: 'bookroom',
     ...overrides,
   };
 }
@@ -85,6 +86,7 @@ describe('ingestFile', () => {
       lookupIndex,
       transient: undefined,
       inPlace: false,
+      remote: 'bookroom',
     });
   });
 
@@ -213,6 +215,7 @@ describe('ingestFile', () => {
       lookupIndex: undefined,
       transient: true,
       inPlace: false,
+      remote: 'bookroom',
     });
   });
 

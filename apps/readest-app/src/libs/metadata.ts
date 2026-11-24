@@ -1,31 +1,8 @@
 import { MetadataResult, SearchRequest } from '@/services/metadata/types';
-import { getAPIBaseUrl } from '@/services/environment';
-import { fetchWithAuth } from '@/utils/fetch';
+import { MetadataService } from '@/services/metadata/service';
 
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  timestamp: string;
-  responseTime?: number;
-}
+// Open Library answers CORS for any origin, so the client queries it directly.
+const service = new MetadataService();
 
-const API_ENDPOINT = getAPIBaseUrl() + '/metadata/search';
-
-export const searchMetadata = async (request: SearchRequest): Promise<MetadataResult[]> => {
-  const response = await fetchWithAuth(API_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
-  const result: ApiResponse<MetadataResult[]> = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.error || 'Search failed');
-  }
-
-  return result.data || [];
-};
+export const searchMetadata = (request: SearchRequest): Promise<MetadataResult[]> =>
+  service.search(request);

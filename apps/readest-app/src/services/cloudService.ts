@@ -11,8 +11,8 @@ import {
   uploadFile,
   uploadReplicaFile,
   deleteFile as deleteCloudFile,
+  deleteFileByKey,
   listAllFiles,
-  purgeFiles,
   createProgressHandler,
   batchGetDownloadUrls,
 } from '@/libs/storage';
@@ -20,7 +20,6 @@ import { ClosableFile } from '@/utils/file';
 import { ProgressHandler } from '@/utils/transfer';
 import { CLOUD_BOOKS_SUBDIR, CLOUD_REPLICAS_SUBDIR } from './constants';
 import { isBookFileContentSource, resolveBookContentSource } from './bookContent';
-import { getAbsOfflineDir } from '@/utils/audiobook';
 import { isBookDataFileKey } from '@/utils/bookDataKey';
 
 // A book's synced data (downloaded TTS packs) sits under its cloud folder by
@@ -29,12 +28,8 @@ const purgeCloudBookData = async (bookHash: string): Promise<void> => {
   try {
     const files = await listAllFiles({ bookHash, search: `/${bookHash}/` });
     const keys = files.map((f) => f.file_key).filter(isBookDataFileKey);
-    // The purge route takes at most 100 keys a request.
-    let failed = 0;
-    for (let i = 0; i < keys.length; i += 100) {
-      const result = await purgeFiles(keys.slice(i, i + 100), true);
-      failed += result?.failedCount ?? 0;
-    }
+    const results = await Promise.allSettled(keys.map(deleteFileByKey));
+    const failed = results.filter((r) => r.status === 'rejected').length;
     if (failed) console.warn(`Failed to delete ${failed} synced book data file(s)`);
   } catch (error) {
     console.warn('Failed to delete synced book data:', error);
@@ -80,16 +75,6 @@ export async function deleteBook(
         await fs.removeDir(ttsCacheDir, 'Cache', true);
       }
     }
-
-    // An offline Audiobookshelf download keeps its tracks beside the book
-    // (#6256); purge already wiped the whole directory above.
-    if (book.format === 'ABS' && deleteAction !== 'purge') {
-      const offlineDir = getAbsOfflineDir(book.hash);
-      if (await fs.exists(offlineDir, 'Books')) {
-        await fs.removeDir(offlineDir, 'Books', true);
-      }
-    }
-    book.absDownloadedAt = null;
 
     if (deleteAction === 'both' && (await fs.exists(getCoverFilename(book), 'Books'))) {
       await fs.removeFile(getCoverFilename(book), 'Books');

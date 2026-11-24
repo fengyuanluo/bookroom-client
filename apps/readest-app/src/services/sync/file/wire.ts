@@ -175,7 +175,6 @@ const DEVICE_LOCAL_BOOK_FIELDS = [
   'coverImageUrl',
   'downloadedAt',
   'coverDownloadedAt',
-  'absDownloadedAt',
 ] as const satisfies readonly (keyof Book)[];
 
 /** A copy of `book` safe to publish to — or adopt from — the shared index. */

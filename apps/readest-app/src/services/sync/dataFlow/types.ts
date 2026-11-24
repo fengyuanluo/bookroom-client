@@ -16,10 +16,8 @@ export type ConnectorId =
   | 'pagebound'
   | 'notion'
   | 'obsidian'
-  | 'audiobookshelf'
   | 'opds'
   | 'localsend'
-  | 'send'
   | FileSyncBackendKind;
 
 export interface ConnectionCheck {

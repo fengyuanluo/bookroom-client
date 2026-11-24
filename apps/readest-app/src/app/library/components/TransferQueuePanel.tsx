@@ -19,12 +19,11 @@ import { useKeyDownActions } from '@/hooks/useKeyDownActions';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import {
-  getActiveFileSyncBackends,
-  isReadestCloudStorageActive,
   cloudProviderDisplayName,
+  hasBookSyncTarget,
+  syncsBookToBookRoom,
 } from '@/services/sync/cloudSyncProvider';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
-import { isFeedBook } from '@/services/rss/feedBookUrl';
 import {
   TransferItem,
   TransferStatus,
@@ -206,25 +205,19 @@ const TransferQueuePanel: React.FC = () => {
   const onClose = () => setIsOpen(false);
   const divRef = useKeyDownActions({ onCancel: onClose, onConfirm: onClose });
 
-  // Queued downloads try every active file provider before Readest Cloud;
-  // queued uploads still target Readest Cloud storage.
+  // Each book moves only to and from the remote it belongs to (ADR 0010):
+  // uploads go to BookRoom storage, downloads come from the book's own remote.
   const settings = useSettingsStore((s) => s.settings);
-  const readestStorageActive = isReadestCloudStorageActive(settings);
   // Uploads made with Books sync off never get a `books` row, so no other
   // device could list them; the queue refuses them too.
-  const uploadAllowed = readestStorageActive && isSyncCategoryEnabled('book');
+  const uploadAllowed = isSyncCategoryEnabled('book');
 
-  // Feed books are fileless (#5307): sweeping them into "Upload All" only fills
-  // the queue with transfers that can never resolve a source.
   const booksToUpload = getVisibleLibrary().filter(
-    (book) => book.downloadedAt && !book.uploadedAt && !isFeedBook(book),
+    (book) => book.downloadedAt && !book.uploadedAt && syncsBookToBookRoom(settings, book),
   );
-  const downloadAllowed = readestStorageActive || getActiveFileSyncBackends(settings).length > 0;
-  const booksToDownload = downloadAllowed
-    ? getVisibleLibrary().filter(
-        (book) => book.uploadedAt && !book.downloadedAt && !isFeedBook(book),
-      )
-    : [];
+  const booksToDownload = getVisibleLibrary().filter(
+    (book) => book.uploadedAt && !book.downloadedAt && hasBookSyncTarget(settings, book),
+  );
 
   const handleUploadAll = () => {
     booksToUpload.forEach((book) => queueUpload(book));

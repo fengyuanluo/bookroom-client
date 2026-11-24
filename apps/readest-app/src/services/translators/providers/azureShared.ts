@@ -1,8 +1,6 @@
 /**
- * Shared constants and parsing for the Bing Translator web API: used both by
- * the client provider ('./azure', which calls Bing directly on Tauri) and by
- * the same-origin web proxy ('@/app/api/azure-translate/route'). Keep this
- * module free of platform-specific imports so it loads in both bundles.
+ * Constants and parsing for the Bing Translator web API, called directly by
+ * the Tauri provider ('./azure').
  *
  * Microsoft retired the tokenless endpoint the provider used to rely on
  * (https://edge.microsoft.com/translate/auth now 404s for every request, as
@@ -39,18 +37,6 @@ export interface BingAuthParams {
 // The page advertises a one-hour lifetime; retire the token slightly early so
 // a request already in flight cannot land just after it expires.
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
-
-export const isBingAuthParams = (value: unknown): value is BingAuthParams => {
-  const params = value as Partial<BingAuthParams> | null;
-  return (
-    !!params &&
-    typeof params.ig === 'string' &&
-    typeof params.iid === 'string' &&
-    typeof params.key === 'string' &&
-    typeof params.token === 'string' &&
-    typeof params.expiresAt === 'number'
-  );
-};
 
 /**
  * Extracts the auth material the translate endpoint requires from the

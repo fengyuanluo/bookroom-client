@@ -19,6 +19,7 @@ import * as foliateProgress from 'foliate-js/progress.js';
 import env from '@/services/environment';
 import { SyncClient } from '@/libs/sync';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
+import { isBookRoomHash } from '@/services/remote';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { getBookProgress } from '@/store/readerProgressStore';
 import { DEFAULT_STATS_TRACKING_CONFIG, type StatBook } from '@/types/statistics';
@@ -346,7 +347,7 @@ export class TtsStatsRecorder {
     const token = await getAccessToken().catch(() => null);
     if (!token) return;
     try {
-      await pushStats(db, new SyncClient());
+      await pushStats(db, new SyncClient(), isBookRoomHash);
     } catch (err) {
       console.warn('[stats] failed to push TTS listening events:', err);
     }

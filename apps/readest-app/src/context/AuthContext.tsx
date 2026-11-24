@@ -9,113 +9,57 @@ import {
   ReactNode,
   useEffect,
 } from 'react';
-import { User } from '@supabase/supabase-js';
-import { supabase } from '@/utils/supabase';
-import posthog from 'posthog-js';
+import {
+  getSession,
+  logout as endSession,
+  refreshSession,
+  SESSION_CHANGE_EVENT,
+  type BookRoomSession,
+  type BookRoomUser,
+} from '@/services/bookroom/session';
 
 interface AuthContextType {
   token: string | null;
-  user: User | null;
-  login: (token: string, user: User) => void;
-  logout: () => void;
+  user: BookRoomUser | null;
+  /** Adopt a session just issued by `login()` in `services/bookroom/session`. */
+  login: (session: BookRoomSession) => void;
+  logout: () => Promise<void>;
   refresh: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('token');
-    }
-    return null;
-  });
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== 'undefined') {
-      const userJson = localStorage.getItem('user');
-      return userJson ? JSON.parse(userJson) : null;
-    }
-    return null;
-  });
+  const [session, setSession] = useState<BookRoomSession | null>(() => getSession());
 
+  // The session store is shared by every window and refreshes itself; follow
+  // it rather than keeping a second copy that could drift.
   useEffect(() => {
-    const syncSession = (
-      session: { access_token: string; refresh_token: string; user: User } | null,
-    ) => {
-      if (session) {
-        console.log('Syncing session');
-        const { access_token, refresh_token, user } = session;
-        localStorage.setItem('token', access_token);
-        localStorage.setItem('refresh_token', refresh_token);
-        localStorage.setItem('user', JSON.stringify(user));
-        posthog.identify(user.id);
-        setToken(access_token);
-        setUser(user);
-      } else {
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        setToken(null);
-        setUser(null);
-      }
+    const sync = () => setSession(getSession());
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key.startsWith('bookroom:')) sync();
     };
-    const refreshSession = async () => {
-      try {
-        await supabase.auth.refreshSession();
-      } catch {
-        syncSession(null);
-      }
-    };
-
-    const { data: subscription } = supabase.auth.onAuthStateChange((_, session) => {
-      syncSession(session);
-    });
-
-    refreshSession();
+    window.addEventListener(SESSION_CHANGE_EVENT, sync);
+    window.addEventListener('storage', onStorage);
     return () => {
-      subscription?.subscription.unsubscribe();
+      window.removeEventListener(SESSION_CHANGE_EVENT, sync);
+      window.removeEventListener('storage', onStorage);
     };
   }, []);
 
-  // setToken / setUser from useState are stable across renders, so the empty
-  // deps array is correct. Wrapping in useCallback (and only including stable
-  // refs in the deps) is what makes the useMemo below actually memoize the
-  // context value — without this, login/logout/refresh would be recreated on
-  // every render and the memo would always invalidate.
-  const login = useCallback((newToken: string, newUser: User) => {
-    console.log('Logging in');
-    setToken(newToken);
-    setUser(newUser);
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(newUser));
-  }, []);
-
-  const logout = useCallback(async () => {
-    console.log('Logging out');
-    try {
-      await supabase.auth.refreshSession();
-    } catch {
-    } finally {
-      await supabase.auth.signOut({ scope: 'local' });
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      setToken(null);
-      setUser(null);
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.auth.refreshSession();
-      return !error && !!data.session;
-    } catch {
-      return false;
-    }
-  }, []);
+  const login = useCallback((next: BookRoomSession) => setSession(next), []);
+  const logout = useCallback(() => endSession(), []);
+  const refresh = useCallback(() => refreshSession(), []);
 
   const value = useMemo(
-    () => ({ token, user, login, logout, refresh }),
-    [token, user, login, logout, refresh],
+    () => ({
+      token: session?.accessToken ?? null,
+      user: session?.user ?? null,
+      login,
+      logout,
+      refresh,
+    }),
+    [session, login, logout, refresh],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

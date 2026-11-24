@@ -131,29 +131,6 @@ describe('refreshReadingWidget', () => {
     expect(vi.mocked(updateReadingWidget).mock.lastCall![0].stats).toContain(pageStat);
   });
 
-  it('omits the page stats for an audiobook, whose progress is in seconds', async () => {
-    const { updateReadingWidget, getReadingWidgetInstances } = await bridge();
-    mocks.library = [
-      mk({
-        hash: 'a',
-        format: 'OPDSAUDIO',
-        readingStatus: 'reading',
-        progress: [1200, 25000],
-        duration: 25000,
-      }),
-    ];
-    vi.mocked(getReadingWidgetInstances).mockResolvedValueOnce({
-      instances: [
-        instance(1, { showTimeLeft: true, showPagesRemaining: true, showPageCount: true }),
-      ],
-    });
-    await refreshReadingWidget(androidAppService, _);
-    const { stats } = vi.mocked(updateReadingWidget).mock.lastCall![0];
-
-    expect(stats.some((stat) => stat.includes('pages left') || stat.includes(' / '))).toBe(false);
-    expect(stats.some((stat) => stat.endsWith('left'))).toBe(true);
-  });
-
   it('still publishes when the reference page count cannot be loaded', async () => {
     const { updateReadingWidget, getReadingWidgetInstances } = await bridge();
     mocks.library = [mk({ hash: 'a', readingStatus: 'reading', progress: [50, 100] })];

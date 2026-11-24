@@ -114,7 +114,6 @@ function makeSettings(overrides: Partial<SystemSettings> = {}): SystemSettings {
       enabled: true,
       provider: 'ollama',
       ollamaBaseUrl: 'http://localhost',
-      aiGatewayApiKey: 'ai-secret-key',
       openrouterApiKey: 'or-secret-key',
       openrouterBaseUrl: 'https://openrouter.ai/api/v1',
     },
@@ -261,7 +260,6 @@ describe('sanitizeSettingsForBackup - credentials', () => {
     expect(rec(out.readwise)['accessToken']).toBeUndefined();
     expect(rec(out.hardcover)['accessToken']).toBeUndefined();
     expect(rec(out.notion)['accessToken']).toBeUndefined();
-    expect(rec(out.aiSettings)['aiGatewayApiKey']).toBeUndefined();
     expect(rec(out.aiSettings)['openrouterApiKey']).toBeUndefined();
     // non-credential aiSettings fields (e.g. base URL) survive
     expect(rec(out.aiSettings)['openrouterBaseUrl']).toBe('https://openrouter.ai/api/v1');
@@ -301,7 +299,6 @@ describe('sanitizeSettingsForBackup - credentials', () => {
     expect(out.readwise.accessToken).toBe('rw-token');
     expect(out.hardcover.accessToken).toBe('hc-token');
     expect(out.notion.accessToken).toBe('notion-token');
-    expect(rec(out.aiSettings)['aiGatewayApiKey']).toBe('ai-secret-key');
     expect(rec(out.aiSettings)['openrouterApiKey']).toBe('or-secret-key');
     expect(out.opdsCatalogs[0]!.username).toBe('opds-user');
     expect(out.opdsCatalogs[0]!.password).toBe('opds-pass');

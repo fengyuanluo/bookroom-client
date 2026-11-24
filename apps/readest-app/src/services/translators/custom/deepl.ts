@@ -1,8 +1,18 @@
 import { getAIFetch } from '@/services/ai/utils/httpFetch';
 import type { CustomTranslator } from '@/types/translation';
 import { ErrorCodes, TranslationProvider } from '../types';
-import { toDeepLLang } from '../providers/deepl';
+import { normalizeToShortLang } from '@/utils/lang';
 import { CUSTOM_TRANSLATOR_PREFIX } from './constants';
+
+/**
+ * DeepL language codes are upper-case, but the service answers 500 when the
+ * *script* subtag is upper-cased too (`ZH-HANT` fails, `ZH-Hant` works), so
+ * only the primary subtag is upper-cased.
+ */
+export const toDeepLLang = (lang: string): string => {
+  const [primary, ...rest] = normalizeToShortLang(lang).split('-');
+  return [primary!.toUpperCase(), ...rest].join('-');
+};
 
 const DEFAULT_RETRY_AFTER_SECONDS = 2;
 const MAX_RETRY_AFTER_SECONDS = 10;

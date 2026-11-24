@@ -3,17 +3,16 @@ import { Book } from '@/types/book';
 import { useEnv } from '@/context/EnvContext';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { getActiveFileSyncBackends } from '@/services/sync/cloudSyncProvider';
-import { isAbsEbook } from '@/utils/audiobook';
+import { resolveBookSyncGate } from '@/services/sync/cloudSyncProvider';
 
 /**
- * Whether a third-party file mirror (WebDAV / Google Drive / S3 / OneDrive) is
- * switched on. Read straight off the store: the callback below is memoized
- * without `settings` in its dependency list, so a captured copy would go
- * stale the moment the user toggles a provider.
+ * Whether the file-sync backend that owns this book (ADR 0010) is switched on.
+ * Read straight off the store: the callback below is memoized without
+ * `settings` in its dependency list, so a captured copy would go stale the
+ * moment the user toggles a provider.
  */
-export const hasFileSyncMirror = (): boolean =>
-  getActiveFileSyncBackends(useSettingsStore.getState().settings).length > 0;
+export const hasFileSyncMirror = (book: Book): boolean =>
+  resolveBookSyncGate(useSettingsStore.getState().settings, book).backends.length > 0;
 
 interface UseMakeBookAvailableOptions {
   setLoading: Dispatch<SetStateAction<boolean>>;
@@ -39,14 +38,13 @@ export const useMakeBookAvailable = ({
 
   return useCallback(
     async (book: Book) => {
-      if (isAbsEbook(book)) return true;
       // A book with no cloud copy has nothing to fetch; the callers already
       // handle the case where such a book's local file is gone. `uploadedAt` is
       // not the whole story for a file backend: it is stamped by the sync engine,
       // so a row it has not reconciled yet (or one poisoned by a pre-#5087
       // client, #5265) can be sitting on the mirror without carrying the stamp.
       // Ask the mirror before giving up on it.
-      if (!book.uploadedAt && !hasFileSyncMirror()) return true;
+      if (!book.uploadedAt && !hasFileSyncMirror(book)) return true;
       // The row's `downloadedAt` is not proof that the file is still here: a
       // "Remove from Device Only" evicts the file, and an in-place original can
       // be moved or deleted behind our back. Probe, and re-fetch from the cloud

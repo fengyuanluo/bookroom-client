@@ -12,6 +12,7 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 
 vi.mock('@/services/environment', () => ({
   isTauriAppPlatform: vi.fn(() => false),
+  getBaseUrl: () => 'https://bookroom.example',
 }));
 
 const makeSettings = (overrides: Partial<ReadwiseSettings> = {}): ReadwiseSettings => ({

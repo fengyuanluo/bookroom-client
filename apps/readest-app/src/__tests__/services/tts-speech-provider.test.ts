@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   createAudioData: vi.fn(),
   create: vi.fn(),
-  lastConstructedProtocol: '' as string,
 }));
 
 vi.mock('@/libs/edgeTTS', async (importOriginal) => {
@@ -17,9 +16,6 @@ vi.mock('@/libs/edgeTTS', async (importOriginal) => {
         { id: 'en-US-AriaNeural', name: 'Aria', lang: 'en-US' },
         { id: 'fr-FR-DeniseNeural', name: 'Denise', lang: 'fr-FR' },
       ];
-      constructor(protocol: string) {
-        h.lastConstructedProtocol = protocol;
-      }
       create = h.create;
       createAudioData = h.createAudioData;
     },
@@ -54,17 +50,10 @@ describe('EdgeSpeechProvider', () => {
   test('init probes the transport and reports availability', async () => {
     const provider = new EdgeSpeechProvider();
     await expect(provider.init()).resolves.toBe(true);
-    expect(h.lastConstructedProtocol).toBe('wss');
 
     h.create.mockRejectedValueOnce(new Error('boom'));
     const failing = new EdgeSpeechProvider();
     await expect(failing.init()).resolves.toBe(false);
-  });
-
-  test('init accepts an explicit protocol', async () => {
-    const provider = new EdgeSpeechProvider();
-    await provider.init('https');
-    expect(h.lastConstructedProtocol).toBe('https');
   });
 
   test('synthesize always pins rate to 1.0 in the payload', async () => {

@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
-import { useAuth } from '@/context/AuthContext';
 import { useEnv } from '@/context/EnvContext';
-import { useQuotaStats } from '@/hooks/useQuotaStats';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useVocabularyStore } from '@/store/vocabularyStore';
 import {
@@ -27,9 +24,7 @@ import {
   ankiStatus,
   ankiUpdateTags,
 } from '@/services/vocabulary/ankiDroid';
-import { isAnkiAllowed } from '@/utils/access';
 import { eventDispatcher } from '@/utils/event';
-import { navigateToLogin, navigateToProfile } from '@/utils/nav';
 
 const DECK_NAME = 'Readest Vocabulary';
 /** Anki calls a review card mature from a 21-day interval. */
@@ -79,10 +74,7 @@ export interface AnkiImportState {
  */
 export const useAnkiLink = () => {
   const _ = useTranslation();
-  const router = useRouter();
   const { appService } = useEnv();
-  const { user } = useAuth();
-  const { userProfilePlan, customizationPurchased } = useQuotaStats();
   const [status, setStatus] = useState<{ installed: boolean; granted: boolean } | null>(null);
   const [importState, setImportState] = useState<AnkiImportState | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -98,23 +90,9 @@ export const useAnkiLink = () => {
     };
   }, [isAndroid]);
 
-  const entitled = isAnkiAllowed(userProfilePlan ?? 'free', customizationPurchased);
-  // Only badge users who can't use it yet: signed out, or a resolved plan
-  // without it. Never an entitled user, or one whose plan is still loading.
-  const premiumBadge =
-    !entitled && (!user || userProfilePlan !== undefined) ? _('Premium') : undefined;
-
   // Results use `success`: unlike `info`, it wraps instead of cutting a summary off.
   const toast = (type: 'success' | 'warning' | 'error', message: string) =>
     eventDispatcher.dispatch('toast', { type, message, timeout: 3000 });
-
-  /** True when the reader may go on; otherwise sends them to sign in or to the plans. */
-  const guard = (): boolean => {
-    if (entitled) return true;
-    if (!user) navigateToLogin(router);
-    else if (userProfilePlan !== undefined) navigateToProfile(router);
-    return false;
-  };
 
   // Read on every tap: access can be revoked, or AnkiDroid removed, at any time.
   const ready = async (): Promise<boolean> => {
@@ -166,7 +144,7 @@ export const useAnkiLink = () => {
   // Pull on open: only reads, never asks for access, and stays quiet unless
   // something changed.
   useEffect(() => {
-    if (!status?.granted || !entitled || pulledOnOpen.current) return;
+    if (!status?.granted || pulledOnOpen.current) return;
     pulledOnOpen.current = true;
     pull()
       .then(({ plan }) => {
@@ -174,11 +152,10 @@ export const useAnkiLink = () => {
         if (parts.length) toast('success', parts.join(' · '));
       })
       .catch((err) => console.warn('[anki] pull on open failed', err));
-  }, [status, entitled]);
+  }, [status]);
 
   /** Pull, then add Learning words the deck lacks, then bring mark tags in step. */
   const sync = async () => {
-    if (!guard()) return;
     setSyncing(true);
     try {
       if (!(await ready())) return;
@@ -206,7 +183,6 @@ export const useAnkiLink = () => {
   };
 
   const openImport = async () => {
-    if (!guard()) return;
     try {
       if (!(await ready())) return;
       const decks = await ankiListDecks();
@@ -247,13 +223,11 @@ export const useAnkiLink = () => {
 
   return {
     available: !!status?.installed,
-    premiumBadge,
     syncing,
     sync,
     openImport,
     importState,
     runImport,
     closeImport: () => setImportState(null),
-    guardFileExport: guard,
   };
 };

@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { useAppRouter } from '@/hooks/useAppRouter';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getEnabledCustomTTSServices } from '@/store/customTTSStore';
 import type { TTSVoice, TTSVoicesGroup } from '@/services/tts/types';
 import {
   playVoicePreview,
   primeVoicePreview,
-  READEST_TTS_ENGINE,
   suspendReadingForPreview,
 } from '@/services/tts/voicePreview';
 import { eventDispatcher } from '@/utils/event';
-import { navigateToLogin } from '@/utils/nav';
 
 export type VoicePreviewStatus = 'loading' | 'playing';
 
@@ -23,8 +19,6 @@ const previewKey = (group: TTSVoicesGroup, voice: TTSVoice) => `${group.engine}\
 // last played (the caller clears it with `clearPausedReading`).
 export const useVoicePreview = (getText: (voice: TTSVoice) => { text: string; lang: string }) => {
   const _ = useTranslation();
-  const router = useAppRouter();
-  const { user } = useAuth();
   const [active, setActive] = useState<{ key: string; status: VoicePreviewStatus } | null>(null);
   const [pausedReading, setPausedReading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -42,11 +36,6 @@ export const useVoicePreview = (getText: (voice: TTSVoice) => { text: string; la
     const wasActive = active?.key === key;
     stop();
     if (wasActive || !group.engine) return;
-    // Readest Voice previews are synthesized for the reader's account.
-    if (group.engine === READEST_TTS_ENGINE && !user) {
-      navigateToLogin(router);
-      return;
-    }
     primeVoicePreview();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -63,19 +52,11 @@ export const useVoicePreview = (getText: (voice: TTSVoice) => { text: string; la
             customServices: getEnabledCustomTTSServices,
           },
         );
-      } catch (error) {
+      } catch {
         if (controller.signal.aborted) return;
-        const code = error instanceof Error ? error.message : '';
         eventDispatcher.dispatch('toast', {
           type: 'error',
-          message:
-            code === 'DAILY_QUOTA_EXCEEDED'
-              ? _("You have used today's voice previews. Try again tomorrow")
-              : code === 'NOT_AUTHENTICATED'
-                ? _('Please log in to use advanced TTS features')
-                : code === 'BUSY'
-                  ? _('Voices are busy right now. Try again in a moment')
-                  : _("Couldn't play this voice"),
+          message: _("Couldn't play this voice"),
         });
       } finally {
         if (abortRef.current === controller) {

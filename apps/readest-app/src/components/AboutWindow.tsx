@@ -10,8 +10,7 @@ import { parseWebViewInfo } from '@/utils/ua';
 import { getAppVersion } from '@/utils/version';
 import { writeTextToClipboard } from '@/utils/clipboard';
 import { eventDispatcher } from '@/utils/event';
-import SupportLinks from './SupportLinks';
-import LegalLinks from './LegalLinks';
+import { BOOKROOM_SOURCE_URL } from '@/services/constants';
 import Dialog from './Dialog';
 import Link from './Link';
 
@@ -109,7 +108,7 @@ export const AboutWindow = () => {
   // report (#5285), so tapping the label copies it. The label itself stays
   // localized; the copied string is locale-neutral and names the app first.
   const handleCopyVersion = async () => {
-    const copied = await writeTextToClipboard(`Readest ${getAppVersion()} (${browserInfo})`);
+    const copied = await writeTextToClipboard(`BookRoom ${getAppVersion()} (${browserInfo})`);
     if (!copied) return;
     eventDispatcher.dispatch('toast', {
       type: 'info',
@@ -123,7 +122,7 @@ export const AboutWindow = () => {
     <Dialog
       id='about_window'
       isOpen={isOpen}
-      title={_('About Readest')}
+      title={_('About BookRoom')}
       onClose={handleClose}
       boxClassName='sm:w-[480px]! sm:max-w-(--breakpoint-sm)! sm:h-auto'
     >
@@ -134,7 +133,7 @@ export const AboutWindow = () => {
               <Image src='/icon.png' alt='App Logo' className='h-20 w-20' width={64} height={64} />
             </div>
             <div className='flex select-text flex-col items-center'>
-              <h2 className='mb-2 text-2xl font-bold'>Readest</h2>
+              <h2 className='mb-2 text-2xl font-bold'>BookRoom</h2>
               <button
                 type='button'
                 title={_('Copy')}
@@ -174,7 +173,11 @@ export const AboutWindow = () => {
             dir='ltr'
           >
             <p className='text-neutral-content text-sm'>
-              © {new Date().getFullYear()} Bilingify LLC. All rights reserved.
+              BookRoom is based on{' '}
+              <Link href='https://github.com/readest/readest' className='text-blue-500 underline'>
+                Readest
+              </Link>{' '}
+              © {new Date().getFullYear()} Bilingify LLC.
             </p>
 
             <p className='text-neutral-content text-xs'>
@@ -190,15 +193,12 @@ export const AboutWindow = () => {
             </p>
             <p className='text-neutral-content text-xs'>
               Source code is available at{' '}
-              <Link href='https://github.com/readest/readest' className='text-blue-500 underline'>
+              <Link href={BOOKROOM_SOURCE_URL} className='text-blue-500 underline'>
                 GitHub
               </Link>
               .
             </p>
-
-            <LegalLinks />
           </div>
-          <SupportLinks />
         </div>
       )}
     </Dialog>

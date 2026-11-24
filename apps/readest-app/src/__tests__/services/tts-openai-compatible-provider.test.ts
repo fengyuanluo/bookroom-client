@@ -53,17 +53,12 @@ const wavResponse = (bytes: Uint8Array<ArrayBuffer>) =>
 
 describe('OpenAICompatibleSpeechProvider', () => {
   let services: CustomTTSService[];
-  let allowed: boolean;
   let provider: OpenAICompatibleSpeechProvider;
 
   beforeEach(() => {
     fetchMock.mockReset();
     services = [service()];
-    allowed = true;
-    provider = new OpenAICompatibleSpeechProvider(
-      () => services,
-      async () => allowed,
-    );
+    provider = new OpenAICompatibleSpeechProvider(() => services);
   });
 
   it('lists the voices each service reports, namespaced by service id', async () => {
@@ -156,17 +151,8 @@ describe('OpenAICompatibleSpeechProvider', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('queries no service without premium', async () => {
-    allowed = false;
-    expect(await provider.getAllVoices()).toEqual([]);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('is unavailable without premium or without services', async () => {
+  it('is unavailable without services', async () => {
     expect(await provider.init()).toBe(true);
-    allowed = false;
-    expect(await provider.init()).toBe(false);
-    allowed = true;
     services = [];
     expect(await provider.init()).toBe(false);
   });

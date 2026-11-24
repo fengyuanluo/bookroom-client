@@ -6,7 +6,6 @@ import { dictionaryAdapter, DICTIONARY_KIND } from './adapters/dictionary';
 import { fontAdapter, FONT_KIND } from './adapters/font';
 import { textureAdapter, TEXTURE_KIND } from './adapters/texture';
 import { opdsCatalogAdapter } from './adapters/opdsCatalog';
-import { absServerAdapter } from './adapters/absServer';
 import { customTranslatorAdapter, translationPromptAdapter } from './adapters/customTranslator';
 import { customTTSAdapter } from './adapters/customTTS';
 import { settingsAdapter } from './adapters/settings';
@@ -22,8 +21,6 @@ const KNOWN_ADAPTERS: ReplicaAdapter<unknown>[] = [
   textureAdapter as unknown as ReplicaAdapter<unknown>,
   // Metadata-only — no binary download handler needed.
   opdsCatalogAdapter as unknown as ReplicaAdapter<unknown>,
-  // Metadata-only — no binary download handler needed.
-  absServerAdapter as unknown as ReplicaAdapter<unknown>,
   // Metadata-only — no binary download handler needed.
   customTranslatorAdapter as unknown as ReplicaAdapter<unknown>,
   translationPromptAdapter as unknown as ReplicaAdapter<unknown>,

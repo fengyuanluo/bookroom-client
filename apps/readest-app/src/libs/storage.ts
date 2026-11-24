@@ -11,14 +11,9 @@ import {
   ProgressPayload,
 } from '@/utils/transfer';
 
-const API_ENDPOINTS = {
-  upload: getAPIBaseUrl() + '/storage/upload',
-  download: getAPIBaseUrl() + '/storage/download',
-  delete: getAPIBaseUrl() + '/storage/delete',
-  stats: getAPIBaseUrl() + '/storage/stats',
-  list: getAPIBaseUrl() + '/storage/list',
-  purge: getAPIBaseUrl() + '/storage/purge',
-};
+// Resolved per call: the server is chosen at sign-in, after this module loads.
+const storageUrl = (route: 'upload' | 'download' | 'delete' | 'list') =>
+  `${getAPIBaseUrl()}/storage/${route}`;
 
 export const createProgressHandler = (
   totalFiles: number,
@@ -48,7 +43,7 @@ export const uploadFile = async (
   media?: string,
 ) => {
   try {
-    const response = await fetchWithAuth(API_ENDPOINTS.upload, {
+    const response = await fetchWithAuth(storageUrl('upload'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +88,7 @@ export const uploadReplicaFile = async (
   onProgress?: ProgressHandler,
 ) => {
   try {
-    const response = await fetchWithAuth(API_ENDPOINTS.upload, {
+    const response = await fetchWithAuth(storageUrl('upload'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -128,7 +123,7 @@ export const batchGetDownloadUrls = async (files: { lfp: string; cfp: string }[]
     }
     const filePaths = files.map((file) => file.cfp);
     const fileKeys = filePaths.map((path) => `${userId}/${path}`);
-    const response = await fetchWithAuth(`${API_ENDPOINTS.download}`, {
+    const response = await fetchWithAuth(storageUrl('download'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -181,7 +176,7 @@ export const downloadFile = async ({
       }
       const fileKey = `${userId}/${cfp}`;
       const response = await fetchWithAuth(
-        `${API_ENDPOINTS.download}?fileKey=${encodeURIComponent(fileKey)}`,
+        `${storageUrl('download')}?fileKey=${encodeURIComponent(fileKey)}`,
         {
           method: 'GET',
         },
@@ -220,48 +215,25 @@ export const downloadFile = async ({
   }
 };
 
+/** Deletes one stored object by its full key (`<user id>/<path>`). */
+export const deleteFileByKey = async (fileKey: string) => {
+  await fetchWithAuth(`${storageUrl('delete')}?fileKey=${encodeURIComponent(fileKey)}`, {
+    method: 'DELETE',
+  });
+};
+
 export const deleteFile = async (filePath: string) => {
   try {
     const userId = await getUserID();
     if (!userId) {
       throw new Error('Not authenticated');
     }
-
-    const fileKey = `${userId}/${filePath}`;
-    await fetchWithAuth(`${API_ENDPOINTS.delete}?fileKey=${encodeURIComponent(fileKey)}`, {
-      method: 'DELETE',
-    });
+    await deleteFileByKey(`${userId}/${filePath}`);
   } catch (error) {
     // Best-effort cloud cleanup: removing the remote copy is non-critical and
-    // callers dispatch this without awaiting, so throwing here surfaces as an
-    // unhandled promise rejection (Sentry READEST-5). Log and swallow instead.
+    // callers dispatch this without awaiting, so throwing here would surface as
+    // an unhandled promise rejection. Log and swallow instead.
     console.warn('File deletion failed:', error);
-  }
-};
-
-export interface StorageStats {
-  totalFiles: number;
-  totalSize: number;
-  usage: number;
-  quota: number;
-  usagePercentage: number;
-  byBookHash: Array<{
-    bookHash: string | null;
-    fileCount: number;
-    totalSize: number;
-  }>;
-}
-
-export const getStorageStats = async (): Promise<StorageStats> => {
-  try {
-    const response = await fetchWithAuth(API_ENDPOINTS.stats, {
-      method: 'GET',
-    });
-
-    return await response.json();
-  } catch (error) {
-    console.error('Get storage stats failed:', error);
-    throw new Error('Get storage stats failed');
   }
 };
 
@@ -304,8 +276,8 @@ export const listFiles = async (params?: ListFilesParams): Promise<ListFilesResp
     if (params?.search) queryParams.set('search', params.search);
 
     const url = queryParams.toString()
-      ? `${API_ENDPOINTS.list}?${queryParams.toString()}`
-      : API_ENDPOINTS.list;
+      ? `${storageUrl('list')}?${queryParams.toString()}`
+      : storageUrl('list');
 
     const response = await fetchWithAuth(url, {
       method: 'GET',
@@ -337,43 +309,4 @@ export const listAllFiles = async (
     totalPages = result.totalPages ?? 0;
   }
   return [...files.values()];
-};
-
-interface PurgeFilesResult {
-  success: string[];
-  failed: Array<{ fileKey: string; error: string }>;
-  deletedCount: number;
-  failedCount: number;
-}
-
-export const purgeFiles = async (
-  filePathsOrKeys: string[],
-  isFileKeys = false,
-): Promise<PurgeFilesResult> => {
-  try {
-    let fileKeys: string[];
-
-    if (isFileKeys) {
-      fileKeys = filePathsOrKeys;
-    } else {
-      const userId = await getUserID();
-      if (!userId) {
-        throw new Error('Not authenticated');
-      }
-      fileKeys = filePathsOrKeys.map((path) => `${userId}/${path}`);
-    }
-
-    const response = await fetchWithAuth(API_ENDPOINTS.purge, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ fileKeys }),
-    });
-
-    return await response.json();
-  } catch (error) {
-    console.error('Purge files failed:', error);
-    throw new Error('Purge files failed');
-  }
 };

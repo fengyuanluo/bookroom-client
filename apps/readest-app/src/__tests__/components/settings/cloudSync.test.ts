@@ -11,34 +11,10 @@ import {
 } from '@/services/sync/cloudSyncActivation';
 import { useSettingsStore } from '@/store/settingsStore';
 import { broadcastGlobalSettings } from '@/utils/settingsSync';
-import { CLOUD_SYNC_REQUIRES_PREMIUM, isCloudSyncAllowed, isCloudSyncInPlan } from '@/utils/access';
 import type { SystemSettings } from '@/types/settings';
 import type { EnvConfigType } from '@/services/environment';
 
 const mockBroadcastGlobalSettings = vi.mocked(broadcastGlobalSettings);
-
-describe('isCloudSyncInPlan', () => {
-  test('any paid plan can use cloud sync', () => {
-    expect(isCloudSyncInPlan('plus', false)).toBe(true);
-    expect(isCloudSyncInPlan('pro', false)).toBe(true);
-    // A storage-only buyer reports `purchase` without being entitled.
-    expect(isCloudSyncInPlan('purchase', false)).toBe(false);
-  });
-
-  test('free plan cannot', () => {
-    expect(isCloudSyncInPlan('free', false)).toBe(false);
-  });
-});
-
-describe('isCloudSyncAllowed (premium paywall)', () => {
-  test('third-party cloud sync requires a paid plan', () => {
-    expect(CLOUD_SYNC_REQUIRES_PREMIUM).toBe(true);
-    expect(isCloudSyncAllowed('free', false)).toBe(false);
-    expect(isCloudSyncAllowed('plus', false)).toBe(true);
-    expect(isCloudSyncAllowed('pro', false)).toBe(true);
-    expect(isCloudSyncAllowed('purchase', false)).toBe(false);
-  });
-});
 
 describe('withCloudProviderEnabled', () => {
   const both = {
@@ -276,20 +252,5 @@ describe('persistReadestCloudChoice', () => {
 
     expect(next.readestCloud?.enabled).toBe(true);
     expect(next.readestCloud?.disabledAt).toBeUndefined();
-  });
-});
-
-// Premium is now the plan OR an outright Full Customization purchase.
-describe('isCloudSyncAllowed — customization unlock', () => {
-  test('entitles a free user who bought Full Customization', () => {
-    expect(isCloudSyncAllowed('free', true)).toBe(true);
-  });
-
-  test('entitles a grandfathered storage buyer, who carries the flag', () => {
-    expect(isCloudSyncAllowed('purchase', true)).toBe(true);
-  });
-
-  test('does not entitle a storage-only buyer after the grace period', () => {
-    expect(isCloudSyncAllowed('purchase', false)).toBe(false);
   });
 });

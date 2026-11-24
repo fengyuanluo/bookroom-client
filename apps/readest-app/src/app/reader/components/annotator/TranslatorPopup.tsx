@@ -10,7 +10,6 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useTranslator } from '@/hooks/useTranslator';
 import { TRANSLATOR_LANGS } from '@/services/constants';
-import { isCustomTranslatorAllowed } from '@/utils/access';
 import {
   UseTranslatorOptions,
   getTranslatorDisplayLabel,
@@ -75,7 +74,7 @@ const TranslatorPopup: React.FC<TranslatorPopupProps> = ({
   // diagnosed from the popup itself (#5823).
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const book = useBookDataStore((s) => s.getBookData(bookKey)?.book);
-  const { translate, translator, translators } = useTranslator({
+  const { translate, translators } = useTranslator({
     provider,
     sourceLang,
     targetLang,
@@ -97,9 +96,7 @@ const TranslatorPopup: React.FC<TranslatorPopupProps> = ({
 
   const handleProviderChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const requestedProvider = event.target.value;
-    const availableTranslators = getTranslators().filter((t) =>
-      isTranslatorAvailable(t, !!token, isCustomTranslatorAllowed(token)),
-    );
+    const availableTranslators = getTranslators().filter(isTranslatorAvailable);
     const selectedTranslator =
       availableTranslators.find((t) => t.name === requestedProvider) || availableTranslators[0]!;
     if (selectedTranslator) {
@@ -110,15 +107,14 @@ const TranslatorPopup: React.FC<TranslatorPopupProps> = ({
   };
 
   useEffect(() => {
-    const hasPremium = isCustomTranslatorAllowed(token);
     const availableProviders = translators.map((t) => ({
       name: t.name,
-      label: getTranslatorDisplayLabel(t, !!token, hasPremium, _),
-      disabled: !!t.disabled || (!!t.premiumRequired && !hasPremium),
+      label: getTranslatorDisplayLabel(t, _),
+      disabled: !!t.disabled,
     }));
     setProviders(availableProviders);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [translators, token]);
+  }, [translators]);
 
   useEffect(() => {
     setLoading(true);
@@ -146,14 +142,8 @@ const TranslatorPopup: React.FC<TranslatorPopupProps> = ({
         }
       } catch (err) {
         console.error(err);
-        // Only blame a missing login when this provider actually needs one;
-        // Azure/Google/Yandex run without a Readest account in the app.
-        if (translator?.authRequired && !token) {
-          setError(_('Unable to fetch the translation. Please log in first and try again.'));
-        } else {
-          setError(_('Unable to fetch the translation. Try again later.'));
-          setErrorDetail(err instanceof Error ? err.message : String(err));
-        }
+        setError(_('Unable to fetch the translation. Try again later.'));
+        setErrorDetail(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }

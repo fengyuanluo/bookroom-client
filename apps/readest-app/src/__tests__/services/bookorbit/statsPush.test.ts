@@ -45,7 +45,7 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
 
     expect(uploaded).toHaveLength(1);
     const books = uploaded[0]!;
@@ -61,7 +61,7 @@ describe('pushStatsToBookOrbit', () => {
   it('does nothing when there are no new events', async () => {
     const stats = makeStats([makeEvent({ startTime: 500 })], 1000);
     const client = { uploadPageStats: vi.fn(async () => undefined) };
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
     expect(client.uploadPageStats).not.toHaveBeenCalled();
     expect(stats.setCursor).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
     expect(uploaded[0]![0]!.events).toEqual([
       { page: 1, startTime: 1300, durationSeconds: 30, totalPages: 100 },
     ]);
@@ -107,7 +107,7 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await expect(pushStatsToBookOrbit(stats, client)).rejects.toThrow('server down');
+    await expect(pushStatsToBookOrbit(stats, client, () => true)).rejects.toThrow('server down');
 
     expect(calls).toHaveLength(2);
     expect(calls[0]!).toHaveLength(50);
@@ -127,10 +127,10 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
 
     expect(calls.map(countEvents)).toEqual([500, 500, 200]);
-    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([500, 1000, 1200]);
+    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([500, 1000, 1200, 1200]);
   });
 
   it('uploads an exact 500-event batch in one request', async () => {
@@ -145,10 +145,10 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
 
     expect(calls.map(countEvents)).toEqual([500]);
-    expect(stats.setCursor).toHaveBeenCalledOnce();
+    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([500, 500]);
     expect(stats.cursors['bookorbit-push']).toBe(500);
   });
 
@@ -166,10 +166,10 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
 
     expect(calls.map(countEvents)).toEqual([499, 2]);
-    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([499, 1000]);
+    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([499, 1000, 1000]);
   });
 
   it('splits an oversized startTime group without advancing its cursor until it completes', async () => {
@@ -185,16 +185,16 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await expect(pushStatsToBookOrbit(stats, client)).rejects.toThrow('server down');
+    await expect(pushStatsToBookOrbit(stats, client, () => true)).rejects.toThrow('server down');
     expect(calls.map(countEvents)).toEqual([500, 1]);
     expect(stats.setCursor).not.toHaveBeenCalled();
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
 
     // With no partial cursor, the first slice is retried. BookOrbit deduplicates
     // those events by book, device, page, and startTime.
     expect(calls.map(countEvents)).toEqual([500, 1, 500, 1]);
-    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([1000]);
+    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([1000, 1000]);
   });
 
   it('keeps an oversized multi-book startTime group within both server limits', async () => {
@@ -209,11 +209,11 @@ describe('pushStatsToBookOrbit', () => {
       }),
     };
 
-    await pushStatsToBookOrbit(stats, client);
+    await pushStatsToBookOrbit(stats, client, () => true);
 
     expect(calls.every((books) => books.length <= 50)).toBe(true);
     expect(calls.every((books) => countEvents(books) <= 500)).toBe(true);
     expect(calls.reduce((total, books) => total + countEvents(books), 0)).toBe(501);
-    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([1000]);
+    expect(stats.setCursor.mock.calls.map(([, value]) => value)).toEqual([1000, 1000]);
   });
 });

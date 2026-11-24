@@ -54,14 +54,9 @@ vi.mock('@/app/library/hooks/useSpatialNavigation', () => ({ useSpatialNavigatio
 vi.mock('@/app/library/hooks/useOpenBook', () => ({
   useOpenBook: () => ({ openBook: mocks.open }),
 }));
-vi.mock('@/store/absServerStore', () => ({
-  useABSServerStore: () => mocks.servers,
-  isAbsBookOrphaned: () => false,
-}));
 vi.mock('overlayscrollbars-react', () => ({
   useOverlayScrollbars: () => [mocks.initialize, mocks.instance],
 }));
-vi.mock('@/app/library/components/ShareBookDialog', () => ({ default: () => null }));
 vi.mock('@/app/library/components/BookshelfItem', () => ({
   default: ({
     item,
@@ -147,6 +142,7 @@ const books: Book[] = Array.from({ length: 20 }, (_, index) => ({
   title: `Book ${index}`,
   author: 'Writer',
   format: 'EPUB',
+  remote: 'bookroom',
   createdAt: index,
   updatedAt: index,
   progress: [1, 100],
@@ -240,7 +236,7 @@ describe('library bookshelf integration', () => {
     expect(screen.queryByTestId(emptyShelf.id)).toBeNull();
     expect(screen.getByTestId('default')).toBeTruthy();
   });
-  it('moves a newly finished audiobook out of an earlier exclusive shelf and back when reopened', () => {
+  it('moves a newly finished PDF out of an earlier exclusive shelf and back when reopened', () => {
     const audio = bookshelfSchema.parse({
       ...createBookshelf('Audiobooks'),
       exclusive: true,
@@ -248,7 +244,7 @@ describe('library bookshelf integration', () => {
         type: 'group',
         match: 'all',
         children: [
-          { type: 'rule', field: 'audio', kind: 'boolean', operator: 'equals', value: true },
+          { type: 'rule', field: 'format', kind: 'text', operator: 'equals', value: 'PDF' },
         ],
       },
     });
@@ -258,7 +254,7 @@ describe('library bookshelf integration', () => {
         s.id === 'finished' ? { ...s, enabled: true, exclusive: true } : s,
       ),
     ]);
-    const audioBooks: Book[] = [{ ...books[0]!, format: 'ABS', readingStatus: 'reading' }];
+    const audioBooks: Book[] = [{ ...books[0]!, format: 'PDF', readingStatus: 'reading' }];
     useLibraryStore.setState({ library: audioBooks });
     const { rerender } = render(<Bookshelf {...props} libraryBooks={audioBooks} />);
     expect(screen.getByTestId(audio.id).textContent).toBe('Book 0');
@@ -711,7 +707,7 @@ describe('library bookshelf integration', () => {
         type: 'group',
         match: 'all',
         children: [
-          { type: 'rule', field: 'audio', kind: 'boolean', operator: 'equals', value: true },
+          { type: 'rule', field: 'format', kind: 'text', operator: 'equals', value: 'PDF' },
         ],
       },
     });
@@ -721,7 +717,7 @@ describe('library bookshelf integration', () => {
     });
     const mixed: Book[] = [
       ...books,
-      { ...books[0]!, hash: 'abs', title: 'Audio book', format: 'ABS' },
+      { ...books[0]!, hash: 'abs', title: 'Audio book', format: 'PDF' },
     ];
     useLibraryStore.setState({ library: mixed });
     const group = createBookGroups(mixed, LibraryGroupByType.Author).find(

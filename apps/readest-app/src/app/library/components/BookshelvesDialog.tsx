@@ -28,8 +28,6 @@ import {
   MdCollectionsBookmark,
   MdEdit,
   MdHistory,
-  MdHeadphones,
-  MdPodcasts,
   MdLibraryBooks,
   MdTaskAlt,
 } from 'react-icons/md';
@@ -42,7 +40,6 @@ import SettingsSwitchRow from '@/components/settings/primitives/SettingsSwitchRo
 import { useTranslation } from '@/hooks/useTranslation';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useLibraryStore } from '@/store/libraryStore';
-import { isAbsBookOrphaned, useABSServerStore } from '@/store/absServerStore';
 import { useMedianPageDurationsSecs } from '@/hooks/useMedianPageDurationSecs';
 import { useBookshelfDate } from '@/hooks/useBookshelfDate';
 import { useEnsureSettingsLoaded } from '@/hooks/useEnsureSettingsLoaded';
@@ -62,8 +59,6 @@ import {
   BOOKSHELF_SORT_LABELS,
   BOOKSHELF_GROUP_LABELS,
   RECENT_BOOKSHELF_ID,
-  AUDIOBOOKS_BOOKSHELF_ID,
-  PODCASTS_BOOKSHELF_ID,
   DEFAULT_BOOKSHELF_ID,
   FINISHED_BOOKSHELF_ID,
 } from '@/services/bookshelves/definitions';
@@ -108,13 +103,9 @@ function BookshelfTab({
       ? MdHistory
       : shelf.id === DEFAULT_BOOKSHELF_ID
         ? MdLibraryBooks
-        : shelf.id === AUDIOBOOKS_BOOKSHELF_ID
-          ? MdHeadphones
-          : shelf.id === PODCASTS_BOOKSHELF_ID
-            ? MdPodcasts
-            : shelf.id === FINISHED_BOOKSHELF_ID
-              ? MdTaskAlt
-              : MdCollectionsBookmark;
+        : shelf.id === FINISHED_BOOKSHELF_ID
+          ? MdTaskAlt
+          : MdCollectionsBookmark;
   useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
@@ -263,7 +254,6 @@ export function BookshelvesEditor({
   );
   const uiLanguage = localStorage.getItem('i18nextLng') || '';
   const library = useLibraryStore((s) => s.library);
-  const servers = useABSServerStore((s) => s.servers);
   const [base] = useState(() => readBookshelves(settings));
   const [draft, setDraft] = useState(base);
   const [selectedId, setSelectedId] = useState(() => {
@@ -382,10 +372,7 @@ export function BookshelvesEditor({
   const selectedGroupBy = resolveBookshelfGroupBy(selected, globalGroupBy);
   const useGlobalSort = selected.useGlobalSort !== false;
   const selectedSort = resolveBookshelfSort(selected, globalSort);
-  const books = useMemo(
-    () => library.filter((b) => !b.deletedAt && !isAbsBookOrphaned(b)),
-    [library, servers, settings],
-  );
+  const books = useMemo(() => library.filter((b) => !b.deletedAt), [library]);
   const fields = useMemo(() => discoverBookshelfFields(books), [books]);
   const previewDefinitions = useMemo(
     () =>

@@ -1,6 +1,5 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { useSettingsStore } from '@/store/settingsStore';
-import { setCachedUserPlan } from '@/services/sync/cloudSyncProvider';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useFileSyncStore } from '@/store/fileSyncStore';
 import type { SystemSettings } from '@/types/settings';
@@ -77,6 +76,7 @@ const makeBook = (hash: string): Book => ({
   author: 'A',
   createdAt: 1,
   updatedAt: 1,
+  remote: 'webdav',
 });
 
 const translationFn = (key: string, params?: Record<string, string | number>) => {
@@ -120,7 +120,6 @@ describe('runFileLibrarySyncPass', () => {
     useSettingsStore.getState().setSettings(multiProviderSettings);
     useLibraryStore.setState({ library: [makeBook('h1')], libraryLoaded: true });
     useFileSyncStore.setState({ byKind: {}, activeKind: null, lastErrorByKind: {} });
-    setCachedUserPlan('pro');
   });
 
   test('runs every enabled backend in a fixed order and sums the result', async () => {
@@ -229,30 +228,26 @@ describe('runFileBookUpload', () => {
     pushBookFile.mockReset().mockResolvedValue({ uploaded: true });
     pushBookCover.mockReset().mockResolvedValue({ uploaded: true });
     useSettingsStore.getState().setSettings(multiProviderSettings);
-    setCachedUserPlan('pro');
   });
 
-  test('pushes the book to every enabled backend', async () => {
+  test('pushes the book only to the backend that owns it', async () => {
     expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(true);
-    expect(pushBookFile).toHaveBeenCalledTimes(2);
+    expect(pushBookFile).toHaveBeenCalledTimes(1);
   });
 
-  test('succeeds when at least one backend takes the book', async () => {
-    pushBookFile
-      .mockRejectedValueOnce(new Error('drive is down'))
-      .mockResolvedValueOnce({ uploaded: true });
-    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(true);
+  test('does not push a book owned by an unconfigured remote', async () => {
+    const book = { ...makeBook('h1'), remote: 's3' } as Book;
+    expect(await runFileBookUpload(envConfig, book)).toBe(false);
+    expect(pushBookFile).not.toHaveBeenCalled();
   });
 
-  test('fails when no backend takes the book', async () => {
+  test('fails when the book backend rejects the file', async () => {
     pushBookFile.mockRejectedValue(new Error('offline'));
     expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(false);
   });
 
   test('treats an already-mirrored file as success', async () => {
-    pushBookFile
-      .mockResolvedValueOnce({ uploaded: false, reason: 'remote-matches' })
-      .mockResolvedValueOnce({ uploaded: false, reason: 'no-source' });
+    pushBookFile.mockResolvedValueOnce({ uploaded: false, reason: 'remote-matches' });
     expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(true);
   });
 });
@@ -261,19 +256,18 @@ describe('runFileBookDownload', () => {
   beforeEach(() => {
     downloadBookFile.mockReset();
     useSettingsStore.getState().setSettings(multiProviderSettings);
-    setCachedUserPlan('pro');
   });
 
-  test('stops at the first backend that has the file', async () => {
+  test('downloads from the backend that owns the book', async () => {
     downloadBookFile.mockResolvedValueOnce(true);
     expect(await runFileBookDownload(envConfig, makeBook('h1'))).toBe(true);
     expect(downloadBookFile).toHaveBeenCalledTimes(1);
   });
 
-  test('falls through to the next backend when the first does not have it', async () => {
-    downloadBookFile.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    expect(await runFileBookDownload(envConfig, makeBook('h1'))).toBe(true);
-    expect(downloadBookFile).toHaveBeenCalledTimes(2);
+  test('does not try backends that do not own the book', async () => {
+    const book = { ...makeBook('h1'), remote: 's3' } as Book;
+    expect(await runFileBookDownload(envConfig, book)).toBe(false);
+    expect(downloadBookFile).not.toHaveBeenCalled();
   });
 
   test('stamps downloadedAt and coverDownloadedAt on success', async () => {
@@ -301,7 +295,6 @@ describe('getReadyFileSyncBackends', () => {
   beforeEach(() => {
     vi.mocked(isWebAppPlatform).mockReturnValue(true);
     vi.mocked(hasValidWebDriveToken).mockReturnValue(true);
-    setCachedUserPlan('pro');
   });
 
   test('includes gdrive when the web token is valid', () => {
@@ -321,11 +314,6 @@ describe('getReadyFileSyncBackends', () => {
     expect(getReadyFileSyncBackends(settings)).toEqual(['webdav', 'gdrive']);
   });
 
-  test('excludes everything when the plan gate pauses third-party sync', () => {
-    setCachedUserPlan('free');
-    expect(getReadyFileSyncBackends(settings)).toEqual([]);
-  });
-
   test('rules icloud out off Apple platforms (canBackendRun false)', () => {
     expect(canBackendRun('icloud')).toBe(false);
   });
@@ -333,7 +321,6 @@ describe('getReadyFileSyncBackends', () => {
 
 describe('runFileLibrarySyncPass data flow', () => {
   const enableWebdav = () => {
-    setCachedUserPlan('pro');
     useSettingsStore.getState().setSettings({
       webdav: { enabled: true, serverUrl: 'https://dav', syncBooks: true },
     } as unknown as SystemSettings);

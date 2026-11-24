@@ -10,11 +10,10 @@ import { useSidebarStore } from '@/store/sidebarStore';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useParallelViewStore } from '@/store/parallelViewStore';
-import { isWebAppPlatform } from '@/services/environment';
+import { progressSyncOf } from '@/services/remote';
 import { eventDispatcher } from '@/utils/event';
 import { canPairAudiobook } from '@/utils/audiobook';
 import { FIXED_LAYOUT_FORMATS } from '@/types/book';
-import { DOWNLOAD_READEST_URL } from '@/services/constants';
 import { saveViewSettings } from '@/helpers/settings';
 import { setProofreadRulesVisibility } from '@/app/reader/components/ProofreadRules';
 import { setAboutDialogVisible } from '@/components/AboutWindow';
@@ -65,10 +64,6 @@ const BookMenu: React.FC<BookMenuProps> = ({ menuClassName, setIsDropdownOpen })
   };
   const showAboutReadest = () => {
     setAboutDialogVisible(true);
-    setIsDropdownOpen?.(false);
-  };
-  const downloadReadest = () => {
-    window.open(DOWNLOAD_READEST_URL, '_blank');
     setIsDropdownOpen?.(false);
   };
   const handleExportAnnotations = () => {
@@ -164,8 +159,13 @@ const BookMenu: React.FC<BookMenuProps> = ({ menuClassName, setIsDropdownOpen })
   const pageboundLink = sideBarBookKey ? getConfig(sideBarBookKey)?.pagebound : undefined;
   const pageboundEnabled = !!(settings.pagebound?.enabled && settings.pagebound.refreshToken);
   const obsidianEnabled = !!(settings.obsidian?.enabled && settings.obsidian.folder);
-  const bookOrbitProgressSync = settings.bookorbit.enabled && settings.bookorbit.syncProgress;
-  const grimmoryProgressSync = settings.grimmory.enabled && settings.grimmory.syncProgress;
+  // A book syncs progress through the service its OPDS catalog names (ADR 0010).
+  const progressSync = bookData?.book ? progressSyncOf(settings, bookData.book) : null;
+  const koSyncProgress = settings.kosync.enabled && progressSync === 'kosync';
+  const bookOrbitProgressSync =
+    settings.bookorbit.enabled && settings.bookorbit.syncProgress && progressSync === 'bookorbit';
+  const grimmoryProgressSync =
+    settings.grimmory.enabled && settings.grimmory.syncProgress && progressSync === 'grimmory';
   // Routed through Annotator (per-book, long-lived) so that the
   // confirmation dialog isn't unmounted with the dropdown menu.
   const handleClearAnnotations = () => {
@@ -221,7 +221,7 @@ const BookMenu: React.FC<BookMenuProps> = ({ menuClassName, setIsDropdownOpen })
         ) : (
           <MenuItem label={_('Enter Parallel Sync')} onClick={handleSetParallel} />
         ))}
-      {(settings.kosync.enabled ||
+      {(koSyncProgress ||
         bookOrbitProgressSync ||
         grimmoryProgressSync ||
         settings.readwise.enabled ||
@@ -231,7 +231,7 @@ const BookMenu: React.FC<BookMenuProps> = ({ menuClassName, setIsDropdownOpen })
         (settings.notion.enabled && settings.notion.accessToken && settings.notion.databaseId)) && (
         <hr aria-hidden='true' className='border-base-200 my-1' />
       )}
-      {settings.kosync.enabled && (
+      {koSyncProgress && (
         <MenuItem label={_('KOReader Sync')} detailsOpen={false} buttonClass='py-2'>
           <ul className='flex flex-col ps-1'>
             <MenuItem label={_('Push Progress')} noIcon onClick={handlePushKOSync('kosync')} />
@@ -335,8 +335,7 @@ const BookMenu: React.FC<BookMenuProps> = ({ menuClassName, setIsDropdownOpen })
       )}
       <MenuItem label={_('Reload Page')} shortcut='Shift+R' onClick={handleReloadPage} />
       <hr aria-hidden='true' className='border-base-200 my-1' />
-      {isWebAppPlatform() && <MenuItem label={_('Download Readest')} onClick={downloadReadest} />}
-      <MenuItem label={_('About Readest')} onClick={showAboutReadest} />
+      <MenuItem label={_('About BookRoom')} onClick={showAboutReadest} />
     </Menu>
   );
 };

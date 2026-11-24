@@ -7,7 +7,6 @@ import { useLibraryStore } from '@/store/libraryStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { transferManager } from '@/services/transferManager';
 import { useTransferStore } from '@/store/transferStore';
-import { setCachedUserPlan } from '@/services/sync/cloudSyncProvider';
 
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (text: string) => text,
@@ -27,6 +26,7 @@ const localOnlyBook: Book = {
   createdAt: 1000,
   updatedAt: 1000,
   downloadedAt: 1000,
+  remote: 'bookroom',
 };
 
 const withSettings = (overrides: Partial<SystemSettings> = {}) =>
@@ -40,7 +40,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  setCachedUserPlan('free');
 });
 
 describe('generic provider transfer history', () => {
@@ -91,23 +90,19 @@ describe('TransferQueuePanel Download All', () => {
     's3',
     'onedrive',
     'icloud',
-  ] as const)('queues cloud-only books with %s enabled and Readest Cloud off', (provider) => {
-    setCachedUserPlan('plus');
+  ] as const)('queues books owned by %s with Readest Cloud off', (provider) => {
+    const remote = provider === 'googleDrive' ? 'gdrive' : provider;
+    const backendBook: Book = { ...cloudOnlyBook, remote };
     withSettings({ readestCloud: { enabled: false }, [provider]: { enabled: true } });
     useLibraryStore.setState({
-      getVisibleLibrary: () => [
-        cloudOnlyBook,
-        localOnlyBook,
-        { ...cloudOnlyBook, downloadedAt: 1000 },
-        { ...cloudOnlyBook, hash: 'feed', url: 'feed://subscription' },
-      ],
+      getVisibleLibrary: () => [backendBook, localOnlyBook, { ...backendBook, downloadedAt: 1000 }],
     });
     const queueDownload = vi.spyOn(transferManager, 'queueDownload').mockReturnValue('t-1');
 
     render(<TransferQueuePanel />);
     fireEvent.click(screen.getByLabelText('Download All'));
 
-    expect(queueDownload).toHaveBeenCalledExactlyOnceWith(cloudOnlyBook, undefined, true);
+    expect(queueDownload).toHaveBeenCalledExactlyOnceWith(backendBook, undefined, true);
     expect(screen.queryByLabelText('Upload All')).toBeNull();
   });
 
@@ -118,12 +113,14 @@ describe('TransferQueuePanel Download All', () => {
     expect(screen.queryByLabelText('Download All')).toBeNull();
   });
 
-  it('is hidden when the only file provider is paused', () => {
+  it('is hidden when the book belongs to a backend that is switched off', () => {
     withSettings({
       readestCloud: { enabled: false },
       s3: { enabled: true },
     } as Partial<SystemSettings>);
-    useLibraryStore.setState({ getVisibleLibrary: () => [cloudOnlyBook] });
+    useLibraryStore.setState({
+      getVisibleLibrary: () => [{ ...cloudOnlyBook, remote: 'webdav' }],
+    });
     render(<TransferQueuePanel />);
     expect(screen.queryByLabelText('Download All')).toBeNull();
   });

@@ -16,7 +16,6 @@ import {
   getGroupDisplayName,
   expandBookshelfSelection,
   selectDownloadableBooks,
-  selectAbsOfflineBooks,
   canRemoveFromDeviceOnly,
   buildGroupNameUpdatedAt,
   resolveCurrentShelfBooks,
@@ -1558,17 +1557,6 @@ describe('selectDownloadableBooks', () => {
     expect(selectDownloadableBooks(['local-only'], items, [localOnly])).toEqual([]);
   });
 
-  it('skips feed books, which have no file to fetch', () => {
-    const feed = createMockBook({
-      hash: 'feed',
-      uploadedAt: 100,
-      url: 'feed://%7B%22feedUrl%22%3A%22https%3A%2F%2Fexample.com%2Frss%22%7D',
-    });
-    const items: (Book | BooksGroup)[] = [feed];
-
-    expect(selectDownloadableBooks(['feed'], items, [feed])).toEqual([]);
-  });
-
   it('skips soft-deleted books', () => {
     const gone = createMockBook({ hash: 'gone', uploadedAt: 100, deletedAt: 300 });
     const items: (Book | BooksGroup)[] = [gone];
@@ -1591,36 +1579,6 @@ describe('selectDownloadableBooks', () => {
 
   it('returns an empty array when nothing is selected', () => {
     expect(selectDownloadableBooks([], [], [])).toEqual([]);
-  });
-});
-
-describe('selectAbsOfflineBooks', () => {
-  // Bulk Download in select mode keeps Audiobookshelf audiobooks on the
-  // device (#6256), the same action as the per-book "Download for Offline".
-  it('picks ABS audiobooks not yet downloaded for offline', () => {
-    const abs = createMockBook({ hash: 'abs', format: 'ABS' });
-    const offline = createMockBook({ hash: 'offline', format: 'ABS', absDownloadedAt: 100 });
-    const podcast = createMockBook({ hash: 'podcast', format: 'ABS', absMediaType: 'podcast' });
-    const epub = createMockBook({ hash: 'epub', format: 'EPUB', uploadedAt: 100 });
-    const gone = createMockBook({ hash: 'gone', format: 'ABS', deletedAt: 300 });
-    const books = [abs, offline, podcast, epub, gone];
-
-    expect(
-      selectAbsOfflineBooks(
-        books.map((b) => b.hash),
-        books,
-        books,
-      ),
-    ).toEqual([abs]);
-  });
-
-  it('expands a selected group into its ABS audiobooks', () => {
-    const abs = createMockBook({ hash: 'abs', format: 'ABS', groupName: 'Audio' });
-    const items: (Book | BooksGroup)[] = [
-      { id: 'group-audio', name: 'Audio', displayName: 'Audio', books: [abs], updatedAt: 0 },
-    ];
-
-    expect(selectAbsOfflineBooks(['group-audio'], items, [abs])).toEqual([abs]);
   });
 });
 
@@ -2010,10 +1968,6 @@ describe('canRemoveFromDeviceOnly', () => {
     expect(canRemoveFromDeviceOnly(createMockBook({ downloadedAt: 200, uploadedAt: 100 }))).toBe(
       true,
     );
-  });
-
-  it('accepts an Audiobookshelf offline download', () => {
-    expect(canRemoveFromDeviceOnly(createMockBook({ absDownloadedAt: 200 }))).toBe(true);
   });
 
   it('rejects a local-only book, whose file would be lost', () => {

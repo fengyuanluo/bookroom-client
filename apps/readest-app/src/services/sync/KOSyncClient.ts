@@ -7,7 +7,8 @@ import { isLanAddress } from '@/utils/network';
 import { getUserLang, makeSafeFilename } from '@/utils/misc';
 import { normalizeCustomHeaders } from '@/utils/customHeaders';
 import { allowsSelfSignedCert, tlsFetch } from '@/utils/tls';
-import { getAPIBaseUrl, isTauriAppPlatform } from '../environment';
+import { isTauriAppPlatform } from '../environment';
+import { postToBookRoomProxy } from '../bookroom/proxy';
 
 const getContributorName = (contributor: unknown): string => {
   if (typeof contributor === 'string') return contributor.trim();
@@ -109,7 +110,6 @@ export class KOSyncClient {
         );
       }
 
-      const proxyUrl = `${getAPIBaseUrl()}/kosync`;
       const proxyBody: KoSyncProxyPayload = {
         serverUrl: this.config.serverUrl,
         endpoint,
@@ -118,13 +118,7 @@ export class KOSyncClient {
         body: body ? JSON.parse(body as string) : undefined,
       };
 
-      return await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(proxyBody),
-      });
+      return await postToBookRoomProxy('/kosync', proxyBody);
     };
 
     let response = await attempt();
@@ -337,6 +331,6 @@ export class KOSyncClient {
     if (this.config.checksumMethod === 'filename') {
       return md5(book.originalFilename || `${book.title}.${book.format.toLowerCase()}`);
     }
-    return book.metadata?.absFileHash ?? book.hash;
+    return book.hash;
   }
 }

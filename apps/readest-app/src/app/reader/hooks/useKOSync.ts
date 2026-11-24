@@ -6,6 +6,7 @@ import { useBookProgress } from '@/store/readerProgressStore';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useTranslation } from '@/hooks/useTranslation';
 import { recordFlow } from '@/services/sync/dataFlow/log';
+import { progressSyncOf } from '@/services/remote';
 import { KOSyncClient, KoSyncProgress } from '@/services/sync/KOSyncClient';
 import { Book, BookProgress, FIXED_LAYOUT_FORMATS } from '@/types/book';
 import type { KOSyncSettings, SystemSettings } from '@/types/settings';
@@ -103,6 +104,15 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
   const getConfig = useBookDataStore((s) => s.getConfig);
   const setConfig = useBookDataStore((s) => s.setConfig);
 
+  // A book syncs progress only through the service its OPDS catalog names
+  // (ADR 0010); every other book leaves this provider idle.
+  const selectConfig = (s: SystemSettings): KosyncEngineConfig | null => {
+    const current = getBookData(bookKey)?.book;
+    return current && progressSyncOf(s, current) === provider.name
+      ? provider.selectConfig(s)
+      : null;
+  };
+
   const [kosyncClient, setKOSyncClient] = useState<ProgressSyncClient | null>(null);
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [conflictDetails, setConflictDetails] = useState<SyncDetails | null>(null);
@@ -118,14 +128,14 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
   // pull-on-open effect below. Reads from readerProgressStore.
   const progress = useBookProgress(bookKey);
 
-  const checksumMethod = provider.selectConfig(settings)?.checksumMethod;
+  const checksumMethod = selectConfig(settings)?.checksumMethod;
   const checksumGeneration = useRef(0);
   const pendingPut = useRef<Promise<unknown>>(Promise.resolve());
   const documentDigest = kosyncClient && book ? kosyncClient.getDocumentDigest(book) : null;
   const previousDocumentDigest = useRef(documentDigest);
 
   useEffect(() => {
-    const config = provider.selectConfig(settings);
+    const config = selectConfig(settings);
     if (!config || (provider.createClient && !appService)) {
       setKOSyncClient(null);
       return;
@@ -135,7 +145,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
       : new KOSyncClient({ ...config });
     setKOSyncClient(client);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, provider, checksumMethod, !!appService]);
+  }, [settings, provider, checksumMethod, !!appService, book?.remote]);
 
   useEffect(() => {
     if (previousDocumentDigest.current === documentDigest) return;
@@ -294,7 +304,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
     // position; only treat a sizeable jump (≥1%) as a conflict so we don't
     // prompt on the sub-page drift between a push and the next pull.
     const isSameDevice =
-      !!remote.device_id && remote.device_id === provider.selectConfig(settings)?.deviceId;
+      !!remote.device_id && remote.device_id === selectConfig(settings)?.deviceId;
     const conflictProgressDiffThreshold = isSameDevice ? 0.01 : 0.0001;
     // The remote progress as a percentage to compare against the local one;
     // refined to a locally-resolved fraction for reflowable books below.
@@ -406,7 +416,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
       debounce(async () => {
         if (!bookKey || !appService || !kosyncClient || !hasPulledOnce.current) return;
         const { settings } = useSettingsStore.getState();
-        const config = provider.selectConfig(settings);
+        const config = selectConfig(settings);
         if (
           !config ||
           config.checksumMethod !== checksumMethod ||
@@ -454,7 +464,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
       const bookDoc = bookData?.bookDoc;
       if (!book || !bookDoc) return;
 
-      const config = provider.selectConfig(settings);
+      const config = selectConfig(settings);
       if (!config?.enabled) return;
       const { strategy } = config;
       const generation = checksumGeneration.current;
@@ -588,7 +598,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
       // Skip auto-pushes while previewing a deep-link target. Manual pushes
       // via the 'push-kosync' event are still respected (explicit user intent).
       if (useReaderStore.getState().getViewState(bookKey)?.previewMode) return;
-      const config = provider.selectConfig(settings);
+      const config = selectConfig(settings);
       // Auto Sync off (#6029): the server only hears from us when the user
       // asks, via 'push-kosync'. Pulls below stay automatic.
       if (config?.enabled && config.strategy !== 'receive' && config.autoSync !== false) {
@@ -607,7 +617,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
     } else {
       // Nothing is ever pending in manual mode, so this pair would be the one
       // automatic push that still got through — schedule then flush.
-      if (provider.selectConfig(useSettingsStore.getState().settings)?.autoSync === false) return;
+      if (selectConfig(useSettingsStore.getState().settings)?.autoSync === false) return;
       pushProgress();
       pushProgress.flush();
     }

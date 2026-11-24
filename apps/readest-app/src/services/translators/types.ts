@@ -3,10 +3,6 @@ import { TranslatorName } from './providers';
 export interface TranslationProvider {
   name: string;
   label: string;
-  authRequired?: boolean;
-  /** Needs a premium plan (custom translators). */
-  premiumRequired?: boolean;
-  quotaExceeded?: boolean;
   /**
    * The upstream API carries inline HTML through translation, repositioning
    * tags onto the semantically matching words in the target language. When set,

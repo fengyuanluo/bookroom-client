@@ -85,7 +85,9 @@ describe('DocumentLoader.open', () => {
     const result = await new DocumentLoader(file).open();
 
     expect(result.book).toBeTruthy();
-    expect(result.format).toBe('EPUB');
+    // TXT is stored as-is (ADR 0011) and converted in memory on open; the
+    // loader reports the source format, not the transient EPUB.
+    expect(result.format).toBe('TXT');
   }, 15000);
 
   const txtBody = ['Chapter 1', '', 'Hello world.'].join('\n');
@@ -99,7 +101,9 @@ describe('DocumentLoader.open', () => {
     const result = await new DocumentLoader(file).open();
 
     expect(result.book).toBeTruthy();
-    expect(result.format).toBe('EPUB');
+    // TXT is stored as-is (ADR 0011) and converted in memory on open; the
+    // loader reports the source format, not the transient EPUB.
+    expect(result.format).toBe('TXT');
   }, 15000);
 
   it('opens a .txt with an uppercase extension and a generic MIME', async () => {
@@ -108,7 +112,9 @@ describe('DocumentLoader.open', () => {
     const result = await new DocumentLoader(file).open();
 
     expect(result.book).toBeTruthy();
-    expect(result.format).toBe('EPUB');
+    // TXT is stored as-is (ADR 0011) and converted in memory on open; the
+    // loader reports the source format, not the transient EPUB.
+    expect(result.format).toBe('TXT');
   }, 15000);
 });
 

@@ -1,14 +1,11 @@
 import { EdgeSpeechTTS } from '@/libs/edgeTTS';
-import { isTauriAppPlatform } from '@/services/environment';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { CustomTTSService } from '@/types/customTTS';
-import { getAccessToken } from '@/utils/access';
 import { NativeTTSClient } from './NativeTTSClient';
 import {
   CUSTOM_TTS_PROVIDER_ID,
   OpenAICompatibleSpeechProvider,
 } from './providers/openaiCompatible';
-import { fetchReadestVoicePreview } from './providers/readest';
 import { asTTSController, ttsSessionManager } from './TTSSessionManager';
 
 // Voice previews: a short passage spoken by one voice, straight from its
@@ -26,14 +23,12 @@ export interface VoicePreview {
   text: string;
 }
 
-export const READEST_TTS_ENGINE = 'readest-tts';
 const EDGE_TTS_ENGINE = 'edge-tts';
 const WEB_SPEECH_ENGINE = 'web-speech';
 const NATIVE_TTS_ENGINE = 'native-tts';
 
 const PREVIEW_ENGINES = new Set([
   EDGE_TTS_ENGINE,
-  READEST_TTS_ENGINE,
   CUSTOM_TTS_PROVIDER_ID,
   WEB_SPEECH_ENGINE,
   NATIVE_TTS_ENGINE,
@@ -126,18 +121,9 @@ const playAudio = (data: ArrayBuffer, rate: number, signal: AbortSignal, onStart
     });
   });
 
-// The free wss transport is blocked on some networks; signed-in web readers
-// fall back to the proxy route, as reading does (EdgeTTSClient.init).
-const synthesizeEdge = async ({ voiceId, lang, text }: VoicePreview) => {
-  const payload = { lang, text, voice: voiceId, rate: 1, pitch: 1 };
-  try {
-    return (await new EdgeSpeechTTS('wss').createAudioData(payload)).data;
-  } catch (error) {
-    if (isTauriAppPlatform()) throw error;
-    if (!(await getAccessToken())) throw new Error('NOT_AUTHENTICATED');
-    return (await new EdgeSpeechTTS('https').createAudioData(payload)).data;
-  }
-};
+const synthesizeEdge = async ({ voiceId, lang, text }: VoicePreview) =>
+  (await new EdgeSpeechTTS().createAudioData({ lang, text, voice: voiceId, rate: 1, pitch: 1 }))
+    .data;
 
 // Held while speaking: Chrome may collect an utterance mid-speech and never
 // fire its end.
@@ -202,10 +188,8 @@ export const playVoicePreview = async (
   let data: ArrayBuffer;
   if (engine === EDGE_TTS_ENGINE) {
     data = await synthesizeEdge(preview);
-  } else if (engine === READEST_TTS_ENGINE) {
-    data = await fetchReadestVoicePreview({ text, voice: voiceId, lang }, signal);
   } else if (engine === CUSTOM_TTS_PROVIDER_ID) {
-    const provider = new OpenAICompatibleSpeechProvider(customServices, async () => true);
+    const provider = new OpenAICompatibleSpeechProvider(customServices);
     data = (await provider.synthesize({ lang, text, voice: voiceId, pitch: 1 }, signal)).audio;
   } else {
     throw new Error(`No preview for ${engine}`);

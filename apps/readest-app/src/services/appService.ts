@@ -23,7 +23,6 @@ import { getLibraryFilename, getLibraryBackupFilename } from '@/utils/book';
 import { getDirPath, getFilename } from '@/utils/path';
 
 import { getOSPlatform } from '@/utils/misc';
-import { buildAbsEbookUrl, isAbsEbook, parseAbsFilePath } from '@/utils/audiobook';
 import { isStoragePermissionError, requestStoragePermission } from '@/utils/permission';
 import { ProgressHandler } from '@/utils/transfer';
 import { CustomTextureInfo } from '@/styles/textures';
@@ -38,11 +37,6 @@ import * as FontSvc from './fontService';
 import * as ImageSvc from './imageService';
 import * as LibrarySvc from './libraryService';
 import * as Settings from './settingsService';
-import {
-  loadFeeds as loadFeedsFromDisk,
-  saveFeeds as saveFeedsToDisk,
-} from '@/services/rss/feedPersistence';
-import type { RssFeed } from '@/types/rss';
 
 export abstract class BaseAppService implements AppService {
   osPlatform: OsPlatform = getOSPlatform();
@@ -598,19 +592,6 @@ export abstract class BaseAppService implements AppService {
   }
 
   async loadBookContent(book: Book): Promise<BookContent> {
-    if (isAbsEbook(book)) {
-      const parsed = parseAbsFilePath(book.filePath);
-      if (parsed) {
-        const { findABSServerById } = await import('@/store/absServerStore');
-        const server = findABSServerById(parsed.serverId);
-        if (server) {
-          return BookSvc.loadBookContent(this.fs, {
-            ...book,
-            url: buildAbsEbookUrl(server, parsed.itemId),
-          });
-        }
-      }
-    }
     return BookSvc.loadBookContent(this.fs, book);
   }
 
@@ -637,15 +618,6 @@ export abstract class BaseAppService implements AppService {
   async saveBookNav(book: Book, nav: BookNav) {
     return BookSvc.saveBookNav(this.fs, book, nav);
   }
-
-  async loadFeeds(): Promise<RssFeed[]> {
-    return loadFeedsFromDisk(this.fs);
-  }
-
-  async saveFeeds(feeds: RssFeed[]): Promise<void> {
-    return saveFeedsToDisk(this.fs, feeds);
-  }
-
   async loadLibraryBooks(): Promise<Book[]> {
     return LibrarySvc.loadLibraryBooks(this.fs, this.generateCoverImageUrl.bind(this));
   }

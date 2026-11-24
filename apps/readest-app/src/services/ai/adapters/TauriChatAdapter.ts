@@ -26,39 +26,6 @@ export interface TauriAdapterOptions {
   onTurnStart?: (turnId: string) => void;
 }
 
-async function* streamViaApiRoute(
-  messages: Array<{ role: string; content: string }>,
-  systemPrompt: string,
-  settings: AISettings,
-  abortSignal?: AbortSignal,
-): AsyncGenerator<string> {
-  const response = await fetch('/api/ai/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages,
-      system: systemPrompt,
-      apiKey: settings.aiGatewayApiKey,
-      model: settings.aiGatewayModel || 'google/gemini-2.5-flash-lite',
-    }),
-    signal: abortSignal,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `Chat failed: ${response.status}`);
-  }
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    yield decoder.decode(value, { stream: true });
-  }
-}
-
 export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }): AsyncGenerator<ChatModelRunResult> {
@@ -101,17 +68,12 @@ export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatM
           .join('\n'),
       }));
 
-      const useApiRoute = typeof window !== 'undefined' && settings.provider === 'ai-gateway';
-
       try {
         let text = '';
 
         if (backend.kind === 'reedy' && backend.buildLookupTool) {
           // Reedy path: model calls lookupPassage on demand; sources flow
-          // into the store via the tool's onResult hook. We never use the
-          // API route here because the route would need to be extended to
-          // serialize tools — out of scope for MVP. ai-gateway users with
-          // reedy.enabled fall back to direct provider.getModel().
+          // into the store via the tool's onResult hook.
           const provider = getAIProvider(settings);
           const tool = backend.buildLookupTool({
             bookHash,
@@ -152,28 +114,16 @@ export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatM
 
           const systemPrompt = buildSystemPrompt(bookTitle, authorName, chunks, currentPage);
 
-          if (useApiRoute) {
-            for await (const chunk of streamViaApiRoute(
-              aiMessages,
-              systemPrompt,
-              settings,
-              abortSignal,
-            )) {
-              text += chunk;
-              yield { content: [{ type: 'text', text }] };
-            }
-          } else {
-            const provider = getAIProvider(settings);
-            const result = streamText({
-              model: provider.getModel(),
-              system: systemPrompt,
-              messages: aiMessages,
-              abortSignal,
-            });
-            for await (const chunk of result.textStream) {
-              text += chunk;
-              yield { content: [{ type: 'text', text }] };
-            }
+          const provider = getAIProvider(settings);
+          const result = streamText({
+            model: provider.getModel(),
+            system: systemPrompt,
+            messages: aiMessages,
+            abortSignal,
+          });
+          for await (const chunk of result.textStream) {
+            text += chunk;
+            yield { content: [{ type: 'text', text }] };
           }
         }
 

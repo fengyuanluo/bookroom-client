@@ -10,7 +10,6 @@ import {
   BING_TRANSLATE_URL,
   BING_TRANSLATOR_URL,
   BingAuthParams,
-  isBingAuthParams,
   parseBingAuthParams,
 } from './azureShared';
 
@@ -30,25 +29,16 @@ import {
  * - the token is short-lived (the page advertises one hour) and an expired one
  *   comes back as `statusCode: 205` inside an HTTP 200, so the body has to be
  *   inspected rather than just `response.ok`;
- * - bing.com sends no CORS headers, so a browser cannot call it at all. In the
- *   Tauri app the requests go out directly; in web builds they go through the
- *   same-origin proxy at /api/azure-translate;
+ * - bing.com sends no CORS headers, so a browser cannot call it at all: the
+ *   provider is app-only and the requests go out directly from Tauri;
  * - from some networks www.bing.com redirects to a regional host, and the
  *   translate POST has to go to that host too (see `translateUrl`).
  */
-const PROXY_URL = '/api/azure-translate';
 // Bing translates one text per request, so a page of paragraphs would fan out
-// unbounded without a cap. How wide the cap can be depends on what is in the
-// path: the web proxy budgets concurrency per user and sends the surplus back
-// as 429, while on Tauri the requests go straight to bing.com with no proxy in
-// between. Bing itself does not rate-limit this fan-out (verified against the
-// live endpoint: 12 concurrent translate calls all answered 200), and the
-// endpoint takes seconds per request, so holding the native path at the proxy's
-// budget just serialises a page behind a slow upstream.
-const PROXY_MAX_CONCURRENT_REQUESTS = 3;
-const DIRECT_MAX_CONCURRENT_REQUESTS = 10;
-const maxConcurrentRequests = () =>
-  isTauriAppPlatform() ? DIRECT_MAX_CONCURRENT_REQUESTS : PROXY_MAX_CONCURRENT_REQUESTS;
+// unbounded without a cap. Bing itself does not rate-limit this fan-out
+// (verified against the live endpoint: 12 concurrent translate calls all
+// answered 200), and the endpoint takes seconds per request.
+const MAX_CONCURRENT_REQUESTS = 10;
 // Bing answers `statusCode: 400` above exactly 1000 UTF-16 code units — the
 // cap counts code units, not bytes, so CJK and emoji measure the same as ASCII
 // (verified empirically: 1000 passes, 1001 fails, for all three).
@@ -92,7 +82,7 @@ const requestQueue: Array<() => void> = [];
  * slot is taken), so this cannot deadlock.
  */
 async function withRequestLimit<T>(task: () => Promise<T>): Promise<T> {
-  if (activeRequests < maxConcurrentRequests()) {
+  if (activeRequests < MAX_CONCURRENT_REQUESTS) {
     activeRequests++;
   } else {
     await new Promise<void>((resolve) => requestQueue.push(resolve));
@@ -108,51 +98,25 @@ async function withRequestLimit<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
-const requireWebToken = (token?: string | null) => {
-  if (!token) {
-    throw new Error('azure translate requires authentication in web builds');
-  }
-  return token;
-};
-
-async function fetchAuthParams(token?: string | null): Promise<BingAuthParams> {
-  if (isTauriAppPlatform()) {
-    const response = await withRequestLimit(() =>
-      tauriFetch(BING_TRANSLATOR_URL, {
-        method: 'GET',
-        headers: { 'User-Agent': BING_REQUEST_HEADERS['User-Agent'] },
-      }),
-    );
-    if (!response.ok) {
-      throw new Error(`bing translate auth failed with status ${response.status}`);
-    }
-    translateUrl = translateUrlFor(response.url);
-    return parseBingAuthParams(await response.text(), Date.now());
-  }
-
-  // The translator page is ~650KB of markup; the proxy parses it server-side
-  // and returns just the auth material.
+async function fetchAuthParams(): Promise<BingAuthParams> {
   const response = await withRequestLimit(() =>
-    window.fetch(`${PROXY_URL}?endpoint=auth`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${requireWebToken(token)}` },
+    tauriFetch(BING_TRANSLATOR_URL, {
+      method: 'GET',
+      headers: { 'User-Agent': BING_REQUEST_HEADERS['User-Agent'] },
     }),
   );
   if (!response.ok) {
     throw new Error(`bing translate auth failed with status ${response.status}`);
   }
-  const data = await response.json().catch(() => null);
-  if (!isBingAuthParams(data)) {
-    throw new Error('bing translate auth failed: malformed response');
-  }
-  return data;
+  translateUrl = translateUrlFor(response.url);
+  return parseBingAuthParams(await response.text(), Date.now());
 }
 
-async function getAuthParams(token?: string | null): Promise<BingAuthParams> {
+async function getAuthParams(): Promise<BingAuthParams> {
   if (cachedAuth && cachedAuth.expiresAt > Date.now()) {
     return cachedAuth;
   }
-  authPromise ??= fetchAuthParams(token)
+  authPromise ??= fetchAuthParams()
     .then((auth) => {
       cachedAuth = auth;
       return auth;
@@ -167,10 +131,9 @@ async function translateChunk(
   chunk: string,
   fromLang: string,
   toLang: string,
-  token?: string | null,
   retryAuth = true,
 ): Promise<string> {
-  const auth = await getAuthParams(token);
+  const auth = await getAuthParams();
   const body = new URLSearchParams({
     fromLang,
     text: chunk,
@@ -181,20 +144,11 @@ async function translateChunk(
   const query = buildTranslateQuery(auth);
 
   const response = await withRequestLimit(() =>
-    isTauriAppPlatform()
-      ? tauriFetch(`${translateUrl}?${query}`, {
-          method: 'POST',
-          headers: BING_REQUEST_HEADERS,
-          body: body.toString(),
-        })
-      : window.fetch(`${PROXY_URL}?endpoint=translate&${query}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: `Bearer ${requireWebToken(token)}`,
-          },
-          body: body.toString(),
-        }),
+    tauriFetch(`${translateUrl}?${query}`, {
+      method: 'POST',
+      headers: BING_REQUEST_HEADERS,
+      body: body.toString(),
+    }),
   );
 
   if (!response.ok) {
@@ -213,7 +167,7 @@ async function translateChunk(
       // Drop the params this attempt used so the retry scrapes a fresh page,
       // without discarding params another call may have just refreshed.
       if (cachedAuth?.token === auth.token) cachedAuth = null;
-      return translateChunk(chunk, fromLang, toLang, token, false);
+      return translateChunk(chunk, fromLang, toLang, false);
     }
     throw new Error(`bing translate failed with status ${statusCode}`);
   }
@@ -227,21 +181,16 @@ async function translateChunk(
 export const azureProvider: TranslationProvider = {
   name: 'azure',
   label: _('Azure Translator'),
-  get authRequired() {
+  get disabled() {
     return !isTauriAppPlatform();
   },
+  requiresApp: true,
   // Verified against the live endpoint: `The <b>quick</b> brown fox …` comes
   // back as `那只<b>敏捷</b>的棕色狐狸 …`, with the tag on the matching word
   // despite the reordering, with or without an explicit textType=html.
   preservesMarkup: true,
-  translate: async (
-    text: string[],
-    sourceLang: string,
-    targetLang: string,
-    token?: string | null,
-  ): Promise<string[]> => {
+  translate: async (text: string[], sourceLang: string, targetLang: string): Promise<string[]> => {
     if (!text.length) return [];
-    if (!isTauriAppPlatform()) requireWebToken(token);
 
     // Bing only accepts its own language list — bare subtags plus script
     // variants like zh-Hans — and answers `statusCode: 400` for maximized
@@ -265,7 +214,7 @@ export const azureProvider: TranslationProvider = {
         // go out as several chunks and are stitched back together.
         const translated = await Promise.all(
           splitTextIntoChunks(line, MAX_CHARS_PER_REQUEST).map((chunk) =>
-            translateChunk(chunk, fromLang, toLang, token),
+            translateChunk(chunk, fromLang, toLang),
           ),
         );
         results[index] = translated.join('');

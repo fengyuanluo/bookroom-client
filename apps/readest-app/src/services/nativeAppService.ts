@@ -68,6 +68,7 @@ import {
   LOCAL_DICTIONARIES_SUBDIR,
   LOCAL_FONTS_SUBDIR,
   LOCAL_IMAGES_SUBDIR,
+  READEST_UPDATER_PUBKEY,
   SETTINGS_FILENAME,
 } from './constants';
 
@@ -310,12 +311,12 @@ export const nativeFileSystem: FileSystem = {
   async getImageURL(path: string) {
     return this.getURL(path);
   },
-  async openFile(path: string, base: BaseDir, name?: string, fetcher?: typeof fetch) {
+  async openFile(path: string, base: BaseDir, name?: string) {
     const normalizedPath = OS_TYPE === 'ios' ? safeDecodePath(path) : path;
     const { fp, baseDir } = this.resolvePath(normalizedPath, base);
     if (isValidURL(path)) {
       const fname = name || getURLFilename(path);
-      return await new RemoteFile(path, fname, '', Date.now(), fetcher ?? tauriFetch).open();
+      return await new RemoteFile(path, fname, '', Date.now(), tauriFetch).open();
     }
     if (isContentURI(path) || (isFileURI(path) && OS_TYPE === 'ios')) {
       const isIOSFileURI = isFileURI(path) && OS_TYPE === 'ios';
@@ -602,8 +603,11 @@ export class NativeAppService extends BaseAppService {
   override hasRoundedWindow = false;
   override hasSafeAreaInset = OS_TYPE === 'ios' || OS_TYPE === 'android';
   override hasHaptics = OS_TYPE === 'ios' || OS_TYPE === 'android';
+  // Off until the release signing key exists: an update can't be verified
+  // without its public key.
   override hasUpdater =
     OS_TYPE !== 'ios' &&
+    !!READEST_UPDATER_PUBKEY &&
     !process.env['NEXT_PUBLIC_DISABLE_UPDATER'] &&
     !window.__READEST_UPDATER_DISABLED;
   // orientation lock is not supported on iPad
@@ -1000,7 +1004,7 @@ export class NativeAppService extends BaseAppService {
         srcPath,
         fileName: galleryName,
         mimeType,
-        albumName: 'Readest',
+        albumName: 'BookRoom',
       });
       if (!res.success) {
         // The plugin returns the MediaStore exception here. Dropping it left an

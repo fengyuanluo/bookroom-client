@@ -7,7 +7,6 @@ import { useAppLockStore } from '@/store/appLockStore';
 import { useLibraryStore } from '@/store/libraryStore';
 import { getInitializedAppService, isTauriAppPlatform } from '@/services/environment';
 import { getOSPlatform } from '@/utils/misc';
-import { isAudiobook } from '@/utils/audiobook';
 import { eventDispatcher } from '@/utils/event';
 import { isMainAppWindow } from '@/utils/window';
 import { getConfigFilename } from '@/utils/book';
@@ -52,7 +51,7 @@ export const getCarMediaLibraryBooks = (
         // from the cloud carries `undefined`, not `null`. Testing `!== null`
         // admits every one of them and the car offers books with no bytes on
         // this device; match the truthiness test used everywhere else.
-        (!!book.downloadedAt || !!book.filePath || !!book.url || book.format === 'ABS'),
+        (!!book.downloadedAt || !!book.filePath || !!book.url),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_CAR_MEDIA_BOOKS)
@@ -64,7 +63,9 @@ export const getCarMediaLibraryBooks = (
         hash,
         title,
         author,
-        isAudiobook: isAudiobook(book),
+        // The native browse tree still reads this flag; every book plays
+        // through TTS now that streaming audiobooks are gone.
+        isAudiobook: false,
         format: book.format,
         coverHash: normalizedCoverHash,
         artworkReady: !!thumbnail && thumbnail.coverHash === normalizedCoverHash,
@@ -221,13 +222,10 @@ const CarMediaLibraryBridge = () => {
         if (!bookHash || lockedRef.current) return;
         // Hand the selection to the shared deep-link path (useOpenLaunchLinks):
         // it defers until the library has hydrated, downloads a cloud-only
-        // book before opening it, routes an audiobook to the player, and
-        // switches an already-mounted reader in place. Re-implementing any of
-        // that here would be a second, untested copy of it.
-        const book = useLibraryStore.getState().getBookByHash(bookHash);
-        const autoplay = !book || !isAudiobook(book);
-        const query = autoplay ? '?autoplay=tts' : '';
-        const url = `readest://book/${encodeURIComponent(bookHash)}${query}`;
+        // book before opening it, and switches an already-mounted reader in
+        // place. Re-implementing any of that here would be a second, untested
+        // copy of it.
+        const url = `readest://book/${encodeURIComponent(bookHash)}?autoplay=tts`;
         eventDispatcher.dispatch('app-incoming-url', { urls: [url] });
       },
     )

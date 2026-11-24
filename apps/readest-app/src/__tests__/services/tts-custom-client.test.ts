@@ -31,10 +31,7 @@ fetchMock.mockImplementation(async (url: string) => {
 describe('BufferedTTSClient over custom TTS services', () => {
   it("offers each service's voices for the book language, and its multilingual ones", async () => {
     const services = [service('a'), service('b')];
-    const provider = new OpenAICompatibleSpeechProvider(
-      () => services,
-      async () => true,
-    );
+    const provider = new OpenAICompatibleSpeechProvider(() => services);
     const store = { get: async () => null, put: async () => {} };
     const client = new BufferedTTSClient(new CachingProvider(provider, store));
     expect(await client.init()).toBe(true);
@@ -58,20 +55,14 @@ describe('BufferedTTSClient over custom TTS services', () => {
 
   it('falls back to a voice of any service that reads the book language', async () => {
     // Service b lists first but has no German voice; service a's read any language.
-    const provider = new OpenAICompatibleSpeechProvider(
-      () => [service('b'), service('a')],
-      async () => true,
-    );
+    const provider = new OpenAICompatibleSpeechProvider(() => [service('b'), service('a')]);
     const client = new BufferedTTSClient(provider);
     await client.init();
     expect(await client.getVoiceIdFromLang('de')).toBe('a:nova');
   });
 
   it('reads every language with the chosen multilingual voice', async () => {
-    const provider = new OpenAICompatibleSpeechProvider(
-      () => [service('a'), service('b')],
-      async () => true,
-    );
+    const provider = new OpenAICompatibleSpeechProvider(() => [service('a'), service('b')]);
     const client = new BufferedTTSClient(provider);
     await client.init();
     const onyx = (await client.getAllVoices()).find((v) => v.id === 'a:onyx')!;
@@ -81,15 +72,5 @@ describe('BufferedTTSClient over custom TTS services', () => {
     for (const lang of ['en', 'ja', 'es']) {
       expect(await client.getVoiceIdFromLang(lang)).toBe('a:onyx');
     }
-  });
-
-  it('is unavailable without premium', async () => {
-    const provider = new OpenAICompatibleSpeechProvider(
-      () => [service('a')],
-      async () => false,
-    );
-    const client = new BufferedTTSClient(provider);
-    expect(await client.init()).toBe(false);
-    expect((await client.getVoices('en'))[0]!.disabled).toBe(true);
   });
 });

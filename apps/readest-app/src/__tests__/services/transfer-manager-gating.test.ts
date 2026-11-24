@@ -22,6 +22,7 @@ function makeBook(overrides: Partial<Book> = {}): Book {
     author: 'Author',
     createdAt: 1000,
     updatedAt: 2000,
+    remote: 'bookroom',
     ...overrides,
   };
 }
@@ -141,35 +142,39 @@ afterEach(() => {
 });
 
 describe('provider gating of book uploads', () => {
-  test('queueUpload returns null and queues nothing when a third-party provider is selected', async () => {
+  test('queueUpload returns null for a book owned by another remote', async () => {
     webdavSelected();
     await initManager();
 
-    const id = transferManager.queueUpload(makeBook());
+    const id = transferManager.queueUpload(makeBook({ remote: 'webdav' }));
     expect(id).toBeNull();
     expect(Object.keys(useTransferStore.getState().transfers)).toHaveLength(0);
   });
 
-  test('queueUpload works when Readest Cloud is the provider', async () => {
+  test('queueUpload works for a BookRoom book while a backend is also enabled', async () => {
+    webdavSelected();
     await initManager();
 
     const id = transferManager.queueUpload(makeBook());
     expect(id).toBeTruthy();
   });
 
-  test('queueBatchUploads returns empty when gated', async () => {
+  test('queueBatchUploads drops books from other remotes', async () => {
     webdavSelected();
     await initManager();
 
-    const ids = transferManager.queueBatchUploads([makeBook(), makeBook({ hash: 'hash2' })]);
-    expect(ids).toEqual([]);
+    const ids = transferManager.queueBatchUploads([
+      makeBook({ remote: 'webdav' }),
+      makeBook({ hash: 'hash2' }),
+    ]);
+    expect(ids).toHaveLength(1);
   });
 
   test('downloads and replica transfers are never gated', async () => {
     webdavSelected();
     await initManager();
 
-    const downloadId = transferManager.queueDownload(makeBook());
+    const downloadId = transferManager.queueDownload(makeBook({ remote: 'webdav' }));
     expect(downloadId).toBeTruthy();
 
     const replicaId = transferManager.queueReplicaUpload(
@@ -211,37 +216,9 @@ describe('Books sync category gating of book uploads', () => {
 
   test('isBookUploadAllowed reflects the Books sync category', () => {
     settingsLoaded();
-    expect(transferManager.isBookUploadAllowed()).toBe(true);
+    expect(transferManager.isBookUploadAllowed(makeBook())).toBe(true);
     booksSyncOff();
-    expect(transferManager.isBookUploadAllowed()).toBe(false);
-  });
-});
-
-describe('ABS books never enter the cloud file transfer queue', () => {
-  test('queueUpload returns null for an ABS book even with Readest Cloud selected', async () => {
-    await initManager();
-
-    const id = transferManager.queueUpload(makeBook({ format: 'ABS' }));
-    expect(id).toBeNull();
-    expect(Object.keys(useTransferStore.getState().transfers)).toHaveLength(0);
-  });
-
-  test('queueDownload returns null for an ABS book', async () => {
-    await initManager();
-
-    const id = transferManager.queueDownload(makeBook({ format: 'ABS' }));
-    expect(id).toBeNull();
-    expect(Object.keys(useTransferStore.getState().transfers)).toHaveLength(0);
-  });
-
-  test('queueBatchUploads drops ABS books but still queues the rest', async () => {
-    await initManager();
-
-    const ids = transferManager.queueBatchUploads([
-      makeBook({ format: 'ABS' }),
-      makeBook({ hash: 'hash2' }),
-    ]);
-    expect(ids).toHaveLength(1);
+    expect(transferManager.isBookUploadAllowed(makeBook())).toBe(false);
   });
 });
 
@@ -320,7 +297,7 @@ describe('policy cancellation on restore/reconcile', () => {
     };
     localStorage.setItem('readest_transfer_queue', JSON.stringify(persisted));
 
-    await initManager();
+    await initManager(makeAppService(), [makeBook({ remote: 'webdav' })]);
     await flushAsync();
 
     const transfers = useTransferStore.getState().transfers;
@@ -330,12 +307,15 @@ describe('policy cancellation on restore/reconcile', () => {
     expect(transfers['rep1']?.status).toBe('pending');
   });
 
-  test('switching providers after init policy-cancels pending book uploads', async () => {
-    await initManager();
+  test('a book reassigned to another remote policy-cancels its pending upload', async () => {
+    const library = [makeBook()];
+    await initManager(makeAppService(), library);
     useTransferStore.getState().pauseQueue();
-    const id = transferManager.queueUpload(makeBook())!;
+    const id = transferManager.queueUpload(library[0]!)!;
 
-    webdavSelected();
+    // The book now belongs to WebDAV, so BookRoom must not store its file.
+    library[0]!.remote = 'webdav';
+    settingsLoaded();
     await flushAsync();
 
     const transfer = useTransferStore.getState().transfers[id];

@@ -63,22 +63,17 @@ describe('canAutoAccept', () => {
   });
 
   it('accepts only a paired, cert-verified sender when entitled', () => {
-    expect(canAutoAccept({ fingerprint: 'F1', certVerified: true }, true)).toBe(true);
+    expect(canAutoAccept({ fingerprint: 'F1', certVerified: true })).toBe(true);
   });
 
   it('never accepts a cert-less sender, even a paired one', () => {
     // The body fingerprint is spoofable: a hostile LAN peer can claim any
     // fingerprint in the prepare-upload body. Only the TLS-verified cert
     // fingerprint may skip the confirmation dialog.
-    expect(canAutoAccept({ fingerprint: 'F1', certVerified: false }, true)).toBe(false);
+    expect(canAutoAccept({ fingerprint: 'F1', certVerified: false })).toBe(false);
   });
 
   it('never accepts an unpaired sender', () => {
-    expect(canAutoAccept({ fingerprint: 'F2', certVerified: true }, true)).toBe(false);
-  });
-
-  it('never auto-accepts without the plan entitlement (records persist)', () => {
-    expect(canAutoAccept({ fingerprint: 'F1', certVerified: true }, false)).toBe(false);
-    expect(isPairedDevice('F1')).toBe(true);
+    expect(canAutoAccept({ fingerprint: 'F2', certVerified: true })).toBe(false);
   });
 });

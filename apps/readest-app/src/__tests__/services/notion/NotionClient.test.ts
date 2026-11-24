@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { NOTION_API_BASE_URL, NOTION_API_VERSION } from '@/services/constants';
 import { isTauriAppPlatform } from '@/services/environment';
-import { getAccessToken } from '@/utils/access';
+import { bookRoomProxyHeaders } from '@/services/bookroom/proxy';
 import {
   DEFAULT_NOTION_NOTE_TEMPLATE,
   normalizeNotionObjectId,
@@ -14,8 +14,18 @@ import type { NotionSettings } from '@/types/settings';
 import { buildAnnotationAppUrl, buildAnnotationWebUrl } from '@/utils/deeplink';
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }));
-vi.mock('@/services/environment', () => ({ isTauriAppPlatform: vi.fn(() => false) }));
-vi.mock('@/utils/access', () => ({ getAccessToken: vi.fn(async () => 'readest-jwt') }));
+vi.mock('@/services/environment', () => ({
+  isTauriAppPlatform: vi.fn(() => false),
+  getBaseUrl: () => 'https://bookroom.example',
+  getAPIBaseUrl: () => '/api',
+}));
+const proxyToken = vi.hoisted(() => ({ value: 'bookroom-jwt' as string | null }));
+vi.mock('@/services/bookroom/proxy', () => ({
+  bookRoomProxyHeaders: vi.fn(async (headers: Record<string, string>) => {
+    if (!proxyToken.value) throw new Error('Sign in to BookRoom to use this service on the web');
+    return { ...headers, Authorization: `Bearer ${proxyToken.value}` };
+  }),
+}));
 
 const TARGET_ID = '1234567890abcdef1234567890abcdef';
 const PAGE_ID = 'page-id';
@@ -100,9 +110,10 @@ describe('NotionClient transport credentials', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    proxyToken.value = 'bookroom-jwt';
   });
 
-  test('web builds send the Readest JWT as auth and the Notion secret separately', async () => {
+  test('web builds send the BookRoom JWT as auth and the Notion secret separately', async () => {
     vi.mocked(isTauriAppPlatform).mockReturnValue(false);
 
     await new NotionClient(makeSettings()).validateToken();
@@ -112,13 +123,13 @@ describe('NotionClient transport credentials', () => {
     expect(url).toBe('/api/notion/users/me');
     // The proxy authenticates the caller, so the Notion secret must not be the
     // thing in `Authorization` on this path.
-    expect(headers['Authorization']).toBe('Bearer readest-jwt');
+    expect(headers['Authorization']).toBe('Bearer bookroom-jwt');
     expect(headers['X-Notion-Token']).toBe('Bearer secret_test');
   });
 
-  test('web builds refuse to sync when the user is not signed in to Readest', async () => {
+  test('web builds refuse to sync when the user is not signed in to BookRoom', async () => {
     vi.mocked(isTauriAppPlatform).mockReturnValue(false);
-    vi.mocked(getAccessToken).mockResolvedValueOnce(null);
+    proxyToken.value = null;
 
     const result = await new NotionClient(makeSettings()).validateToken();
 
@@ -137,7 +148,7 @@ describe('NotionClient transport credentials', () => {
     expect(url).toBe(`${NOTION_API_BASE_URL}/users/me`);
     expect(headers['Authorization']).toBe('Bearer secret_test');
     expect(headers['X-Notion-Token']).toBeUndefined();
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(bookRoomProxyHeaders).not.toHaveBeenCalled();
   });
 });
 
@@ -385,7 +396,7 @@ describe('NotionClient note sync', () => {
     const createBody = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
     const appendBody = JSON.parse((fetchMock.mock.calls[2]![1] as RequestInit).body as string);
     expect(createBody.children[0].paragraph.rich_text[0].text.link.url).toBe(
-      'https://web.readest.com/reader/book-hash',
+      'https://bookroom.example/reader?ids=book-hash',
     );
     const noteLink = appendBody.children[1].paragraph.rich_text[0].text.link.url as string;
     expect(noteLink).toMatch(

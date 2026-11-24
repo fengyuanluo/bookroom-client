@@ -132,15 +132,6 @@ describe('BookCover', () => {
     expect(container.querySelector('.fallback-cover')?.textContent).toContain('Metadata result');
   });
 
-  it.each([
-    'ABS',
-    'OPDSAUDIO',
-    'BOOKORBIT',
-  ] as const)('does not label a streaming source code as a file format (%s)', (format) => {
-    const { container } = render(<BookCover book={makeBook({ format, coverImageUrl: null })} />);
-    expect(container.querySelector('.fallback-cover')?.textContent).not.toContain(format);
-  });
-
   it('passes loading="lazy" to crop-mode Image', () => {
     const { container } = render(<BookCover book={makeBook()} coverFit='crop' />);
     const img = container.querySelector('img.cover-image');

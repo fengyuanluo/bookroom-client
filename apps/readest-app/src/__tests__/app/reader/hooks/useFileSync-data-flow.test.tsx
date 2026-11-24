@@ -27,7 +27,10 @@ const h = vi.hoisted(() => {
 
 vi.mock('@/context/EnvContext', () => ({ useEnv: () => h.env }));
 vi.mock('@/hooks/useTranslation', () => ({ useTranslation: () => h.translate }));
-vi.mock('@/hooks/useQuotaStats', () => ({ useQuotaStats: () => ({ userProfilePlan: 'pro' }) }));
+vi.mock('@/services/sync/cloudSyncProvider', () => ({
+  resolveBookSyncGate: () => ({ readest: false, backends: ['webdav'] }),
+  settingsKeyForBackend: (kind: string) => (kind === 'gdrive' ? 'googleDrive' : kind),
+}));
 vi.mock('@/store/bookDataStore', () => ({
   useBookDataStore: (selector: (s: typeof h.data) => unknown) => selector(h.data),
 }));

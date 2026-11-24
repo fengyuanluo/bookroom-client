@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   buildAnnotationUrl,
   parseWidgetEditShelfDeepLink,
   parseWidgetGroupDeepLink,
 } from '../../utils/deeplink';
+
+vi.mock('@/services/environment', () => ({
+  getBaseUrl: () => 'https://bookroom.example',
+}));
 
 describe('buildAnnotationUrl', () => {
   const link = { bookHash: 'abc', noteId: 'n1', cfi: '/6/4!/4/2' };
@@ -16,13 +20,15 @@ describe('buildAnnotationUrl', () => {
   it('builds the HTTPS web URL when linkType is "web"', () => {
     const url = buildAnnotationUrl(link, 'web');
     expect(url.startsWith('https://')).toBe(true);
-    expect(url).toContain('/o/book/abc/annotation/n1');
+    expect(url).toBe('https://bookroom.example/o?book=abc&note=n1&cfi=%2F6%2F4%21%2F4%2F2');
   });
 
   it('preserves the cfi query for both link types', () => {
     const encoded = encodeURIComponent(link.cfi);
     expect(buildAnnotationUrl(link, 'app')).toContain(`cfi=${encoded}`);
-    expect(buildAnnotationUrl(link, 'web')).toContain(`cfi=${encoded}`);
+    // URLSearchParams percent-encodes `!` where encodeURIComponent does not, so
+    // compare the decoded value rather than the serialized string.
+    expect(new URL(buildAnnotationUrl(link, 'web')).searchParams.get('cfi')).toBe(link.cfi);
   });
 
   it('omits the cfi query when no cfi is provided', () => {

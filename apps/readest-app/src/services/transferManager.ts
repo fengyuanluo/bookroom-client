@@ -2,16 +2,12 @@ import { Book } from '@/types/book';
 import { AppService, BaseDir } from '@/types/system';
 import { useTransferStore, TransferItem, ReplicaTransferFile } from '@/store/transferStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import {
-  getActiveFileSyncBackends,
-  isReadestCloudStorageActive,
-} from '@/services/sync/cloudSyncProvider';
+import { resolveBookSyncGate, syncsBookToBookRoom } from '@/services/sync/cloudSyncProvider';
 import { recordFlow } from '@/services/sync/dataFlow/log';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
 import { TranslationFunc } from '@/hooks/useTranslation';
 import { createProgressThrottle, ProgressHandler, ProgressPayload } from '@/utils/transfer';
 import { eventDispatcher } from '@/utils/event';
-import { isAbsOfflineCapable, isAudiobook } from '@/utils/audiobook';
 import { getTransferMessages } from './transferMessages';
 
 const TRANSFER_QUEUE_KEY = 'readest_transfer_queue';
@@ -69,13 +65,13 @@ class TransferManager {
   }
 
   /**
-   * A Readest Cloud file is only reachable through its `books` row, and that
-   * row is pushed only while Books sync is on. Uploading with it off stores
-   * files no other device can ever list, while still spending quota.
+   * A BookRoom file is only reachable through its `books` row, and that row is
+   * pushed only while Books sync is on and only for BookRoom's own books (ADR
+   * 0010). Uploading anything else stores files no device can ever list.
    */
-  isBookUploadAllowed(): boolean {
+  isBookUploadAllowed(book: Book): boolean {
     return (
-      isReadestCloudStorageActive(useSettingsStore.getState().settings) &&
+      syncsBookToBookRoom(useSettingsStore.getState().settings, book) &&
       isSyncCategoryEnabled('book')
     );
   }
@@ -85,27 +81,31 @@ class TransferManager {
   }
 
   /**
-   * Cancel pending book uploads when Readest Cloud is not the selected
-   * provider or Books sync is off. Idempotent (acts on pending rows only) — safe to run on
-   * every processQueue pass, which also re-settles rows another window
-   * or a rogue retry re-pended. Cancellation is visible ('cancelled'
-   * with cancelReason 'policy'), never a silent drop.
+   * Cancel pending book uploads that may no longer go to BookRoom (BookRoom or
+   * Books sync off, or the book belongs elsewhere). Idempotent (acts on pending
+   * rows only) — safe to run on every processQueue pass, which also re-settles
+   * rows another window or a rogue retry re-pended. Cancellation is visible
+   * ('cancelled' with cancelReason 'policy'), never a silent drop.
    */
   private reconcileUploadsWithProvider(): void {
-    if (!this.isSettingsLoaded() || this.isBookUploadAllowed()) return;
+    if (!this.isSettingsLoaded()) return;
 
     const store = useTransferStore.getState();
-    const gated = store
+    const uploads = store
       .getPendingTransfers()
       .filter((t) => t.kind === 'book' && t.type === 'upload');
+    if (uploads.length === 0) return;
+    const library = new Map((this.getLibrary?.() ?? []).map((b) => [b.hash, b]));
+    const gated = uploads.filter((t) => {
+      const book = library.get(t.bookHash);
+      return !book || !this.isBookUploadAllowed(book);
+    });
     if (gated.length === 0) return;
 
     gated.forEach((t) => {
       store.setTransferStatus(t.id, 'cancelled', undefined, 'policy');
     });
-    console.info(
-      `[cloudSync] cancelled ${gated.length} pending Readest Cloud upload(s): Readest Cloud or Books sync is off`,
-    );
+    console.info(`[cloudSync] cancelled ${gated.length} pending BookRoom upload(s)`);
     this.persistQueue();
   }
 
@@ -183,14 +183,10 @@ class TransferManager {
       console.warn('TransferManager not initialized');
       return null;
     }
-
-    // ABS books stream from the server; there is no local file to upload.
-    if (isAudiobook(book)) return null;
-
-    // Readest Cloud storage is not written to while a third-party
-    // provider is selected. Before settings hydrate the entry is queued
-    // and deferred; the reconcile on hydration decides its fate.
-    if (this.isSettingsLoaded() && !this.isBookUploadAllowed()) {
+    // BookRoom storage takes only BookRoom's own books. Before settings
+    // hydrate the entry is queued and deferred; the reconcile on hydration
+    // decides its fate.
+    if (this.isSettingsLoaded() && !this.isBookUploadAllowed(book)) {
       return null;
     }
 
@@ -213,10 +209,6 @@ class TransferManager {
       console.warn('TransferManager not initialized');
       return null;
     }
-
-    // ABS books stream from the server; there is no cloud file to download.
-    if (isAudiobook(book)) return null;
-
     const store = useTransferStore.getState();
 
     const existing = store.getTransferByBookHash(book.hash, 'download');
@@ -225,31 +217,6 @@ class TransferManager {
     }
 
     const transferId = store.addTransfer(book.hash, book.title, 'download', priority, isBackground);
-    this.persistQueue();
-    this.processQueue();
-    return transferId;
-  }
-
-  /**
-   * Queue an offline download of an Audiobookshelf book's media (#6256). A
-   * 'book' download row, so the shelf's cover overlay and the Transfer Queue
-   * track it like any book download; executeBookTransfer routes it to the
-   * ABS downloader instead of cloud storage.
-   */
-  queueAbsOfflineDownload(book: Book, priority: number = 10): string | null {
-    if (!this.isReady()) {
-      console.warn('TransferManager not initialized');
-      return null;
-    }
-    if (!isAbsOfflineCapable(book)) return null;
-
-    const store = useTransferStore.getState();
-    const existing = store.getTransferByBookHash(book.hash, 'download');
-    if (existing) {
-      return existing.id;
-    }
-
-    const transferId = store.addTransfer(book.hash, book.title, 'download', priority);
     this.persistQueue();
     this.processQueue();
     return transferId;
@@ -510,7 +477,7 @@ class TransferManager {
       if (transfer.kind === 'replica') {
         await this.executeReplicaTransfer(transfer, progressHandler, abortController);
       } else {
-        await this.executeBookTransfer(transfer, progressHandler, abortController);
+        await this.executeBookTransfer(transfer, progressHandler);
       }
       // A transfer that cannot stop mid-flight must not report success once cancelled.
       if (abortController.signal.aborted) return;
@@ -627,18 +594,13 @@ class TransferManager {
   /** A book entry in the data flow log is a file that moved, never its metadata. */
   private recordBookFile(transfer: TransferItem, error?: string): void {
     if (transfer.kind !== 'book' || transfer.type === 'delete') return;
-    const book = this.getLibrary!().find((b) => b.hash === transfer.bookHash);
     const provider = useTransferStore.getState().transfers[transfer.id]?.provider;
     const settings = useSettingsStore.getState().settings;
-    const isAudiobook = book?.format === 'ABS';
-    // With no cloud copy to fall back on, this download was the file backends' alone.
-    if (
-      error &&
-      transfer.type === 'download' &&
-      !isAudiobook &&
-      !isReadestCloudStorageActive(settings)
-    ) {
-      for (const connector of getActiveFileSyncBackends(settings)) {
+    const book = this.getLibrary?.().find((b) => b.hash === transfer.bookHash);
+    const gate = book ? resolveBookSyncGate(settings, book) : null;
+    // With no BookRoom copy to fall back on, this download was its backend's alone.
+    if (error && transfer.type === 'download' && gate && !gate.readest) {
+      for (const connector of gate.backends) {
         recordFlow({
           connector,
           direction: 'pull',
@@ -652,7 +614,7 @@ class TransferManager {
     // runFileBookDownload knows which backend served the file and records it.
     if (provider && provider !== 'readest') return;
     recordFlow({
-      connector: isAudiobook ? 'audiobookshelf' : 'readest-cloud',
+      connector: 'readest-cloud',
       direction: transfer.type === 'upload' ? 'push' : 'pull',
       kind: 'books',
       bookTitle: transfer.bookTitle,
@@ -663,7 +625,6 @@ class TransferManager {
   private async executeBookTransfer(
     transfer: TransferItem,
     progressHandler: (p: ProgressPayload) => void,
-    abortController: AbortController,
   ): Promise<void> {
     const _ = this._!;
     const library = this.getLibrary!();
@@ -673,23 +634,14 @@ class TransferManager {
       throw new Error(_('Book not found in library'));
     }
 
-    if (book.format === 'ABS' && transfer.type === 'download') {
-      const { downloadAbsForOffline } = await import('@/services/audiobookshelf/offline');
-      await downloadAbsForOffline(this.appService!, book, progressHandler, abortController.signal);
-      if (abortController.signal.aborted) return;
-      book.absDownloadedAt = Date.now();
-      await this.updateBook!(book);
-      return;
-    }
-
     if (transfer.type === 'upload') {
       await this.appService!.uploadBook(book, progressHandler);
       book.uploadedAt = Date.now();
       await this.updateBook!(book);
     } else if (transfer.type === 'download') {
-      const settings = useSettingsStore.getState().settings;
+      const gate = resolveBookSyncGate(useSettingsStore.getState().settings, book);
       let downloaded = false;
-      if (getActiveFileSyncBackends(settings).length > 0) {
+      if (gate.backends.length > 0) {
         const { runFileBookDownload } = await import('@/services/sync/file/runLibrarySync');
         downloaded = await runFileBookDownload(
           { getAppService: async () => this.appService! },
@@ -699,7 +651,7 @@ class TransferManager {
         );
       }
       if (!downloaded) {
-        if (!isReadestCloudStorageActive(settings)) {
+        if (!gate.readest) {
           throw new Error(_('Failed to download book: {{title}}', { title: book.title }));
         }
         useTransferStore.getState().setTransferProvider(transfer.id, 'readest');

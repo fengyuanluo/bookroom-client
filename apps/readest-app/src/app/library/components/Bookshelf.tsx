@@ -13,7 +13,6 @@ import { useEnv } from '@/context/EnvContext';
 import { useThemeStore } from '@/store/themeStore';
 import { useAutoFocus } from '@/hooks/useAutoFocus';
 import { useSettingsStore } from '@/store/settingsStore';
-import { isAbsBookOrphaned, useABSServerStore } from '@/store/absServerStore';
 import { useLibraryStore } from '@/store/libraryStore';
 import { selectActiveBookDownloadProgress, useTransferStore } from '@/store/transferStore';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -30,11 +29,11 @@ import {
   getCommonGroupName,
   findSelectedManualGroup,
   resolveCurrentShelfBooks,
-  selectAbsOfflineBooks,
   selectDownloadableBooks,
   withReadingStatus,
 } from '../utils/libraryUtils';
 import { readBookshelves } from '@/services/bookshelves/state';
+import { bookRemote, getCurrentRemote, importRemote } from '@/services/remote';
 import {
   assignBookshelfOwnership,
   evaluateBookshelves,
@@ -52,7 +51,6 @@ import { MIMETYPES, EXTS } from '@/libs/document';
 import { makeSafeFilename } from '@/utils/misc';
 import { isTauriAppPlatform } from '@/services/environment';
 import { isLocalSendEnabled } from '@/services/localsend/devicePrefs';
-import { splitLibraryOpenIds } from '@/utils/audiobook';
 
 import { useSpatialNavigation } from '../hooks/useSpatialNavigation';
 import DeleteConfirmAlert from '@/components/DeleteConfirmAlert';
@@ -60,9 +58,7 @@ import Spinner from '@/components/Spinner';
 import ModalPortal from '@/components/ModalPortal';
 import BookshelfItem from './BookshelfItem';
 import SelectModeActions from './SelectModeActions';
-import ShareBookDialog from './ShareBookDialog';
 import { createCollectionPack, READEST_PACK_MIME } from '@/services/pack/packService';
-import { useAuth } from '@/context/AuthContext';
 import GroupingModal from './GroupingModal';
 import TaggingModal from './TaggingModal';
 import SetStatusAlert from './SetStatusAlert';
@@ -249,20 +245,11 @@ const Bookshelf: React.FC<BookshelfProps> = ({
     [router, searchParams],
   );
 
-  // ABS books whose server row hasn't reached this device (or was removed)
-  // can't stream, have no cover source, and can't be opened — hide them from
-  // every shelf derivation (grid, groups, recent shelf, search). They stay in
-  // the store and keep syncing; they reappear the moment the server row
-  // lands. `absServers` and `settings.absServers` are deps because the orphan
-  // check reads the server store with a settings fallback, both of which
-  // hydrate asynchronously after the cached library first renders. Keying on
-  // the one settings field it reads keeps unrelated settings writes from
-  // re-filtering and re-sorting every shelf.
-  const absServers = useABSServerStore((state) => state.servers);
+  // The library shows one remote at a time (ADR 0010).
+  const currentRemote = getCurrentRemote(settings);
   const visibleBooks = useMemo(
-    () => libraryBooks.filter((book) => !book.deletedAt && !isAbsBookOrphaned(book)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryBooks, absServers, settings.absServers],
+    () => libraryBooks.filter((book) => !book.deletedAt && bookRemote(book) === currentRemote),
+    [libraryBooks, currentRemote],
   );
 
   const filteredBooks = useMemo(() => {
@@ -415,7 +402,9 @@ const Bookshelf: React.FC<BookshelfProps> = ({
     if (importBookUrl && appService) {
       const importBook = async () => {
         console.log('Importing book from URL:', importBookUrl);
-        const book = await appService.importBook(importBookUrl, libraryBooks);
+        const book = await appService.importBook(importBookUrl, libraryBooks, {
+          remote: importRemote(settings),
+        });
         if (book) {
           setLibrary(libraryBooks);
           appService.saveLibraryBooks(libraryBooks);
@@ -452,20 +441,7 @@ const Bookshelf: React.FC<BookshelfProps> = ({
 
   const openSelectedBooks = () => {
     handleSetSelectMode(false);
-    const { audiobookHash, readerIds, droppedAudiobooks } = splitLibraryOpenIds(
-      getSelectedBooks(),
-      (hash) => libraryBooks.find((book) => book.hash === hash),
-    );
-    if (audiobookHash) {
-      router.push(`/player?id=${audiobookHash}`);
-      return;
-    }
-    if (droppedAudiobooks) {
-      eventDispatcher.dispatch('toast', {
-        message: _('Audiobooks open in the player'),
-        type: 'info',
-      });
-    }
+    const readerIds = getSelectedBooks();
     if (readerIds.length === 0) return;
     if (appService?.hasWindow && settings.openBookInNewWindow) {
       showReaderWindow(appService, readerIds);
@@ -803,31 +779,6 @@ const Bookshelf: React.FC<BookshelfProps> = ({
     };
   }, []);
 
-  const { user } = useAuth();
-  const [shareDialogBook, setShareDialogBook] = useState<Book | null>(null);
-
-  useEffect(() => {
-    const handleShareIntent = (event: CustomEvent) => {
-      const book = (event.detail as { book?: Book } | undefined)?.book;
-      if (!book) return;
-      if (!user) {
-        // Logged-out users can't share their own files; route through the
-        // login flow instead. The /auth route preserves a return path.
-        eventDispatcher.dispatch('toast', {
-          type: 'info',
-          message: _('Sign in to share books'),
-          timeout: 2500,
-        });
-        return;
-      }
-      setShareDialogBook(book);
-    };
-    eventDispatcher.on('show-share-dialog', handleShareIntent);
-    return () => {
-      eventDispatcher.off('show-share-dialog', handleShareIntent);
-    };
-  }, [user, _]);
-
   // OverlayScrollbars + Virtuoso integration: Virtuoso manages its own
   // scroller; OverlayScrollbars wraps it for overlay scrollbar rendering.
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
@@ -871,22 +822,11 @@ const Bookshelf: React.FC<BookshelfProps> = ({
   const downloadableBooks = isSelectMode
     ? selectDownloadableBooks(selectedBooks, sortedBookshelfItems, filteredBooks)
     : [];
-  // Audiobookshelf audiobooks have no cloud copy; Download keeps them on the
-  // device instead (#6256), which needs a native filesystem.
-  const absOfflineBooks =
-    isSelectMode && isTauriAppPlatform()
-      ? selectAbsOfflineBooks(selectedBooks, sortedBookshelfItems, filteredBooks)
-      : [];
 
   const downloadSelectedBooks = async () => {
     const books = downloadableBooks;
-    if (books.length === 0 && absOfflineBooks.length === 0) return;
-    handleSetSelectMode(false);
-    // The library page owns the premium gate (useAbsOfflineDownload).
-    if (absOfflineBooks.length > 0) {
-      eventDispatcher.dispatch('abs-offline-download', { books: absOfflineBooks });
-    }
     if (books.length === 0) return;
+    handleSetSelectMode(false);
     // One summary up front rather than a toast per book: the Readest Cloud
     // path returns as soon as each book is queued, but a file backend
     // actually fetches them, and either way the user needs immediate feedback
@@ -1108,7 +1048,7 @@ const Bookshelf: React.FC<BookshelfProps> = ({
           }
           sendNearbyEnabled={isTauriAppPlatform() && isLocalSendEnabled()}
           onSendNearby={sendSelectedNearby}
-          canDownload={downloadableBooks.length + absOfflineBooks.length > 0}
+          canDownload={downloadableBooks.length > 0}
           onOpen={openSelectedBooks}
           onGroup={groupSelectedBooks}
           onTag={tagSelectedBooks}
@@ -1190,11 +1130,6 @@ const Bookshelf: React.FC<BookshelfProps> = ({
           onUpdateStatus={updateBooksStatus}
         />
       )}
-      <ShareBookDialog
-        isOpen={!!shareDialogBook}
-        book={shareDialogBook}
-        onClose={() => setShareDialogBook(null)}
-      />
     </div>
   );
 };

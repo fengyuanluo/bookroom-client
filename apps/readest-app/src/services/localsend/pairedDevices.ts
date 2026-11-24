@@ -78,13 +78,8 @@ export function refreshPairedDevice(
  * Whether an incoming transfer may skip the confirmation dialog. Only a
  * paired sender whose fingerprint came from the TLS client cert qualifies:
  * the body fingerprint is attacker-chosen, so a cert-less sender (e.g. the
- * stock LocalSend app) always confirms no matter what. The entitlement is
- * checked at receive time so a lapsed plan brings the dialogs back while the
- * pairing records stay intact.
+ * stock LocalSend app) always confirms no matter what.
  */
-export function canAutoAccept(
-  sender: { fingerprint: string; certVerified: boolean },
-  entitled: boolean,
-): boolean {
-  return entitled && sender.certVerified && isPairedDevice(sender.fingerprint);
+export function canAutoAccept(sender: { fingerprint: string; certVerified: boolean }): boolean {
+  return sender.certVerified && isPairedDevice(sender.fingerprint);
 }

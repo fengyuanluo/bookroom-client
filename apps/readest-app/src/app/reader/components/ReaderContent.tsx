@@ -7,7 +7,6 @@ import { Book } from '@/types/book';
 import { useEnv } from '@/context/EnvContext';
 import { useSettingsStore } from '@/store/settingsStore';
 import { flushPendingLibrarySave, useBookDataStore } from '@/store/bookDataStore';
-import { useLibraryStore } from '@/store/libraryStore';
 import { useReaderStore } from '@/store/readerStore';
 import { useSidebarStore } from '@/store/sidebarStore';
 import { useAndroidGamepadConnection } from '@/hooks/useAndroidGamepadConnection';
@@ -19,7 +18,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { UnlistenFn } from '@tauri-apps/api/event';
 import { tauriHandleClose, tauriHandleOnCloseWindow } from '@/utils/window';
 import { isTauriAppPlatform } from '@/services/environment';
-import { splitLibraryOpenIds } from '@/utils/audiobook';
 import { uniqueId } from '@/utils/misc';
 import { eventDispatcher } from '@/utils/event';
 import { transitionAway } from '@/utils/viewTransition';
@@ -33,7 +31,6 @@ import { getLockedPanX } from '../utils/lockedPan';
 import { BOOK_IDS_SEPARATOR } from '@/services/constants';
 import { saveBookMetadataEdit } from '@/services/bookMetadataEdit';
 import { BookDetailModal } from '@/components/metadata';
-import ShareBookDialog from '@/app/library/components/ShareBookDialog';
 import { useAuth } from '@/context/AuthContext';
 import { useNotebookDocumentStore } from '@/store/notebookDocumentStore';
 import { canTransitionWithNotebookRecovery } from '../services/notebookDocumentCoordinator';
@@ -69,7 +66,7 @@ const NOTION_FLUSH_TIMEOUT_MS = 3000;
 // holds the old page on screen. The app may also serve the library at `/`.
 const libraryArrived = () => !!document.querySelector('.bookshelf');
 
-const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ ids, settings }) => {
+const ReaderContent: React.FC<{ settings: SystemSettings }> = ({ settings }) => {
   const _ = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,10 +82,6 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
   const [audiobookBookKey, setAudiobookBookKey] = useState<string | null>(null);
   const [hardcoverLinkBookKey, setHardcoverLinkBookKey] = useState<string | null>(null);
   const [pageboundLinkBookKey, setPageboundLinkBookKey] = useState<string | null>(null);
-  const [shareDialogState, setShareDialogState] = useState<{
-    book: Book;
-    cfi: string | null;
-  } | null>(null);
   const { user } = useAuth();
   const isInitiating = useRef(false);
   const [loading, setLoading] = useState(false);
@@ -112,26 +105,8 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
     if (isInitiating.current) return;
     isInitiating.current = true;
 
-    const pathname = window.location.pathname;
-    const bookIds = ids || searchParams?.get('ids') || pathname.split('/reader/')[1] || '';
-    const requestedIds = bookIds.split(BOOK_IDS_SEPARATOR).filter(Boolean);
-
-    // A streaming audiobook has no document to load - a deep link naming one
-    // (a stale bookmark, an "Open With" link, etc.) must not reach
-    // initViewState/loadBookContent. A lone audiobook id redirects to the
-    // player; one mixed into a multi-book deep link is just dropped, and the
-    // rest of the reader opens normally. Same split the library's own open
-    // paths use (src/utils/audiobook.ts), so a stray ABS id is handled
-    // identically everywhere it could turn up.
-    const { getBookByHash } = useLibraryStore.getState();
-    const { audiobookHash, readerIds: initialIds } = splitLibraryOpenIds(
-      requestedIds,
-      getBookByHash,
-    );
-    if (audiobookHash) {
-      router.replace(`/player?id=${audiobookHash}`);
-      return;
-    }
+    const bookIds = searchParams?.get('ids') || '';
+    const initialIds = bookIds.split(BOOK_IDS_SEPARATOR).filter(Boolean);
     // Back from a page opened over the reader, e.g. the account page (#6607):
     // the books are still open, so show them again instead of loading anew.
     if (useReaderStore.getState().areBooksOpen(initialIds)) return;
@@ -197,29 +172,6 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
       eventDispatcher.offSync('show-book-details', handleShowBookDetails);
     };
   }, []);
-
-  useEffect(() => {
-    const handleShareIntent = (event: CustomEvent) => {
-      const detail = event.detail as { book: Book; cfi?: string | null } | undefined;
-      if (!detail?.book) return;
-      if (!user) {
-        eventDispatcher.dispatch('toast', {
-          type: 'info',
-          message: _('Sign in to share books'),
-          timeout: 2500,
-        });
-        return;
-      }
-      setShareDialogState({
-        book: detail.book,
-        cfi: detail.cfi ?? null,
-      });
-    };
-    eventDispatcher.on('show-share-dialog', handleShareIntent);
-    return () => {
-      eventDispatcher.off('show-share-dialog', handleShareIntent);
-    };
-  }, [user, _]);
 
   useEffect(() => {
     if (bookKeys && bookKeys.length > 0) {
@@ -498,12 +450,6 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
           }
         />
       )}
-      <ShareBookDialog
-        isOpen={!!shareDialogState}
-        book={shareDialogState?.book ?? null}
-        cfi={shareDialogState?.cfi ?? null}
-        onClose={() => setShareDialogState(null)}
-      />
       {blockedNotebookBookKey && (
         <ModalPortal>
           <NotebookTransitionAlert

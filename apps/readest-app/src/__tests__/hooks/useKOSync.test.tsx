@@ -36,6 +36,9 @@ const h = vi.hoisted(() => {
     originalFilename: '',
     format: 'EPUB' as string,
     updatedAt: 1,
+    // ADR 0010: progress sync follows the book's remote; this book belongs to
+    // the OPDS catalog that chose KOSync.
+    remote: 'opds:cat-1' as string,
   };
   const bookDoc = {};
 
@@ -57,6 +60,15 @@ const h = vi.hoisted(() => {
         checksumMethod: 'binary' as string,
         deviceId: 'this-device',
       },
+      opdsCatalogs: [
+        {
+          id: 'cat-1',
+          contentId: 'cat-1',
+          name: 'Feed',
+          url: 'https://opds.example.com/feed',
+          progressSync: 'kosync',
+        },
+      ],
     },
     // Local reading position (reflowable): (13+1)/100 = 0.14.
     localProgress: {
@@ -230,6 +242,7 @@ beforeEach(() => {
   h.book.title = 'Old title';
   h.book.originalFilename = '';
   h.book.format = 'EPUB';
+  h.settings.opdsCatalogs[0]!.progressSync = 'kosync';
   h.cfiResolves = true;
   h.clientError = null;
   localStorage.clear();
@@ -718,6 +731,7 @@ describe('useKOSync — manual sync mode (#6029)', () => {
 
   beforeEach(() => {
     h.settings.kosync.strategy = 'silent';
+    h.settings.opdsCatalogs[0]!.progressSync = 'bookorbit';
   });
 
   test('does NOT auto-push on a page turn', async () => {
@@ -956,6 +970,10 @@ describe('useKOSync — a provider with its own client and CFI positions (#7337)
     }),
   };
 
+  beforeEach(() => {
+    h.settings.opdsCatalogs[0]!.progressSync = 'grimmory';
+  });
+
   test('pushes the CFI, not an XPointer', async () => {
     vi.mocked(getXPointerFromCFI).mockClear();
     h.getProgressMock.mockResolvedValue(null);
@@ -1061,6 +1079,7 @@ describe('useKOSync — data flow', () => {
 
   test('records a push under the connector that made it', async () => {
     h.settings.kosync.strategy = 'send';
+    h.settings.opdsCatalogs[0]!.progressSync = 'bookorbit';
     h.updateProgressMock.mockResolvedValue(true);
     const { rerender } = renderHook(() => useKOSync('h1-view1', bookOrbit));
     await settle();

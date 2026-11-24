@@ -1,25 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { useAppRouter } from '@/hooks/useAppRouter';
-import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useQuotaStats } from '@/hooks/useQuotaStats';
 import { useThemeStore } from '@/store/themeStore';
 import { partitionSupportedFiles } from '@/services/localsend/formats';
 import { previewDataUrl } from '@/services/localsend/preview';
 import type { ReceiveRequest } from '@/services/localsend/types';
-import { isNearbyPairingAllowed } from '@/utils/access';
 import { formatBytes } from '@/utils/book';
-import { navigateToLogin, navigateToProfile } from '@/utils/nav';
 import Alert from '@/components/Alert';
 import clsx from 'clsx';
 
 const MAX_LISTED_FILES = 8;
 
-/** Row chassis for the pairing opt-in; `items-start` keeps the box and the
- *  Premium badge on the first line when the label wraps. `pe-0` is load
- *  bearing: the badge is `ms-auto`, so any end padding here would inset it
- *  from the dialog's content edge and break its alignment with the Accept
- *  button below. */
+/** Row chassis for the pairing opt-in; `items-start` keeps the box on the
+ *  first line when the label wraps. */
 const PAIR_ROW =
   'flex cursor-pointer items-start gap-2 rounded-md ps-1 pe-0 py-2 text-start text-sm';
 
@@ -37,8 +29,7 @@ interface ReceiveRequestDialogProps {
  * Cert-verified senders can be paired via "Always accept from <device>":
  * ticking it makes future drops from that device skip this dialog. The opt-in
  * is hidden entirely for cert-less senders (their fingerprint is spoofable, so
- * they can never be trusted); users without the pairing entitlement see it
- * inert behind a Premium badge that routes to the upgrade page.
+ * they can never be trusted).
  */
 const ReceiveRequestDialog: React.FC<ReceiveRequestDialogProps> = ({
   request,
@@ -46,8 +37,6 @@ const ReceiveRequestDialog: React.FC<ReceiveRequestDialogProps> = ({
   onDecline,
 }) => {
   const _ = useTranslation();
-  const router = useAppRouter();
-  const { user } = useAuth();
   const { safeAreaInsets } = useThemeStore();
   const [pairDevice, setPairDevice] = useState(false);
   const { supported, skipped } = useMemo(
@@ -55,23 +44,7 @@ const ReceiveRequestDialog: React.FC<ReceiveRequestDialogProps> = ({
     [request.files],
   );
 
-  // Mirrors the TTS-cache paywall: badge only users who can't pair yet —
-  // signed out (known at once), or a resolved plan without the feature.
-  // While a signed-in user's plan is still loading, show neither the scope
-  // choice nor the badge so nothing flashes.
-  const { userProfilePlan, customizationPurchased } = useQuotaStats();
-  const pairingEntitled = isNearbyPairingAllowed(userProfilePlan ?? 'free', customizationPurchased);
-  const canPair = request.sender.certVerified && pairingEntitled;
-  const pairLocked =
-    request.sender.certVerified && !pairingEntitled && (!user || userProfilePlan !== undefined);
-
-  const openUpgrade = () => {
-    if (user) {
-      navigateToProfile(router);
-    } else {
-      navigateToLogin(router);
-    }
-  };
+  const canPair = request.sender.certVerified;
 
   return (
     <div
@@ -140,29 +113,6 @@ const ReceiveRequestDialog: React.FC<ReceiveRequestDialogProps> = ({
                 {_('Always accept from {{alias}}', { alias: request.sender.alias })}
               </span>
             </label>
-          )}
-          {pairLocked && (
-            <button type='button' className={clsx(PAIR_ROW, 'mt-2 w-full')} onClick={openUpgrade}>
-              {/* Decorative, never `disabled`: daisyUI drops a disabled box to
-                  `opacity: .2` on top of an already 20%-opacity border, which
-                  left the control indistinguishable from the surface. Keep it
-                  at full opacity with an explicit border and take it out of
-                  the tab order instead - the row itself is the control. */}
-              <input
-                type='checkbox'
-                className='checkbox checkbox-sm eink-bordered border-base-content/45 pointer-events-none mt-0.5 shrink-0'
-                checked={false}
-                readOnly
-                tabIndex={-1}
-                aria-hidden='true'
-              />
-              <span className='text-base-content/60 select-none'>
-                {_('Always accept from {{alias}}', { alias: request.sender.alias })}
-              </span>
-              <span className='badge badge-sm badge-ghost ms-auto mt-0.5 shrink-0'>
-                {_('Premium')}
-              </span>
-            </button>
           )}
         </div>
       </Alert>

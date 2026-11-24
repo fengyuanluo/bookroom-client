@@ -158,18 +158,11 @@ describe('LangPanel — Enable Translation availability', () => {
   });
 });
 
-const encode = (part: object) => Buffer.from(JSON.stringify(part)).toString('base64url');
-const sessionToken = (claims: object) => `${encode({ alg: 'none' })}.${encode(claims)}.sig`;
-
 const getCustomTranslatorsRow = () =>
   screen.getByText('Custom Translators').closest('button') as HTMLButtonElement;
 
-// Custom translators are a premium feature: free and signed-out readers see the
-// row with a Premium badge that routes to the upgrade page or sign-in.
-describe('LangPanel — Custom Translators premium gate', () => {
+describe('LangPanel — Custom Translators', () => {
   beforeEach(() => {
-    state.token = null;
-    state.user = null;
     state.push.mockReset();
   });
 
@@ -177,29 +170,7 @@ describe('LangPanel — Custom Translators premium gate', () => {
     cleanup();
   });
 
-  it('sends a signed-out reader to sign in', () => {
-    render(<LangPanel bookKey='book-1' onRegisterReset={vi.fn()} />);
-
-    expect(getCustomTranslatorsRow().textContent).toContain('Premium');
-    fireEvent.click(getCustomTranslatorsRow());
-    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/auth\?redirect=/));
-  });
-
-  it('sends a free user to the plans page', () => {
-    state.token = sessionToken({ plan: 'free' });
-    state.user = { id: 'u' };
-
-    render(<LangPanel bookKey='book-1' onRegisterReset={vi.fn()} />);
-
-    fireEvent.click(getCustomTranslatorsRow());
-    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/user\?redirect=/));
-    expect(screen.queryByText('Add Translator')).toBeNull();
-  });
-
-  it('opens the sub-page for a subscriber', () => {
-    state.token = sessionToken({ plan: 'plus' });
-    state.user = { id: 'u' };
-
+  it('opens the translators sub-page', () => {
     render(<LangPanel bookKey='book-1' onRegisterReset={vi.fn()} />);
 
     expect(getCustomTranslatorsRow().textContent).not.toContain('Premium');

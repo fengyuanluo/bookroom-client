@@ -19,19 +19,12 @@ const nativeClient = vi.hoisted(() => ({
 }));
 
 vi.mock('@/services/tts/voicePreview', () => ({
-  READEST_TTS_ENGINE: 'readest-tts',
   getNativeClient: () => nativeClient,
 }));
 vi.mock('@/services/tts/providers/edge', () => ({
   EdgeSpeechProvider: class {
     id = 'edge-tts';
     label = 'Edge TTS';
-    getAllVoices = async () => [];
-  },
-}));
-vi.mock('@/services/tts/providers/readest', () => ({
-  ReadestVoiceProvider: class {
-    label = 'Readest Voice';
     getAllVoices = async () => [];
   },
 }));
@@ -56,7 +49,6 @@ const load = (platform: Partial<AppService>) =>
   loadVoiceLibrary({
     appService: platform as AppService,
     customServices: () => [],
-    customAllowed: false,
   });
 
 describe('loadVoiceLibrary', () => {

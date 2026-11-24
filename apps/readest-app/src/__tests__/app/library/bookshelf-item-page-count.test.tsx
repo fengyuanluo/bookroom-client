@@ -71,7 +71,6 @@ describe('page count on covers of a shelf that shows it (#6909)', () => {
 
   it.each([
     ['on a shelf that hides it', book, false],
-    ['for an audiobook', { ...book, format: 'ABS' as const, duration: 3600 }, true],
     ['without a known count', { ...book, pageCount: undefined }, true],
   ])('keeps the plain title %s', (_label, item, showPageCount) => {
     renderItem(item, showPageCount);

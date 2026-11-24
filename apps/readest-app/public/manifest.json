@@ -1,10 +1,10 @@
 {
-  "name": "Readest",
-  "short_name": "Readest",
+  "name": "BookRoom",
+  "short_name": "BookRoom",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "description": "Readest is an open-source eBook reader supporting EPUB, PDF, and sync across devices.",
+  "description": "BookRoom: your self-hosted library, read anywhere with progress, notes and shelves in sync.",
   "icons": [
     {
       "src": "/icon.png",

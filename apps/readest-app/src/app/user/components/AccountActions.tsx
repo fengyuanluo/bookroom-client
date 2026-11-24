@@ -1,278 +1,109 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { useEnv } from '@/context/EnvContext';
+import { useState } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { UserPlan } from '@/types/quota';
+import { BookRoomAuthError, changePassword } from '@/services/bookroom/session';
+import { eventDispatcher } from '@/utils/event';
 
-interface DeleteConfirmationModalProps {
-  title: string;
-  message: string;
-  children?: ReactNode;
-  requireTypedConfirmation: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
-  title,
-  message,
-  children,
-  requireTypedConfirmation,
-  onCancel,
-  onConfirm,
-}) => {
-  const _ = useTranslation();
-  const titleId = useId();
-  const [confirmationText, setConfirmationText] = useState('');
-  const canConfirm = !requireTypedConfirmation || confirmationText === 'DELETE';
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const previousFocus = document.activeElement;
-    const dialog = dialogRef.current;
-    const firstControl = () => dialog?.querySelector<HTMLElement>('input, button');
-    firstControl()?.focus();
-
-    const containFocus = (event: FocusEvent) => {
-      if (event.target instanceof Node && !dialog?.contains(event.target)) firstControl()?.focus();
-    };
-    document.addEventListener('focusin', containFocus);
-    return () => {
-      document.removeEventListener('focusin', containFocus);
-      if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
-    };
-  }, []);
-
-  return (
-    <div
-      data-capture-blocking-overlay='true'
-      className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4'
-    >
-      <div
-        ref={dialogRef}
-        onKeyDown={(event) => {
-          if (event.key !== 'Tab') return;
-          const controls = event.currentTarget.querySelectorAll<HTMLElement>(
-            'input, button:not(:disabled)',
-          );
-          const first = controls[0];
-          const last = controls[controls.length - 1];
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last?.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first?.focus();
-          }
-        }}
-        role='dialog'
-        aria-modal='true'
-        aria-labelledby={titleId}
-        className='bg-base-100 eink-bordered max-h-full w-full max-w-md overflow-y-auto rounded-2xl p-6'
-      >
-        <h3 id={titleId} className='text-base-content mb-4 text-xl font-bold'>
-          {title}
-        </h3>
-        {children}
-        <p className='text-base-content/70 mb-6'>{message}</p>
-        {requireTypedConfirmation && (
-          <label className='mb-6 flex flex-col gap-2 text-sm'>
-            {_('Type {{word}} to confirm', { word: 'DELETE' })}
-            <input
-              type='text'
-              value={confirmationText}
-              onChange={(event) => setConfirmationText(event.target.value)}
-              autoComplete='off'
-              autoCapitalize='off'
-              spellCheck={false}
-              dir='ltr'
-              className='input eink-bordered w-full'
-            />
-          </label>
-        )}
-        <div className='flex flex-col gap-3 sm:flex-row'>
-          <button
-            onClick={onCancel}
-            className='bg-base-200 hover:bg-base-300 text-base-content eink-bordered flex-1 rounded-lg px-4 py-2 font-medium transition-colors duration-150'
-          >
-            {_('Cancel')}
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={!canConfirm}
-            className='eink-contrast flex-1 rounded-lg px-4 py-2 font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 not-eink:bg-rose-600 not-eink:text-white not-eink:hover:bg-rose-700'
-          >
-            {_('Delete Permanently')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+const BUTTON_CLASS =
+  'bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto';
+const INPUT_CLASS = 'input eink-bordered w-full rounded-lg placeholder:text-sm';
 
 interface AccountActionsProps {
-  userEmail: string;
-  planName: string;
-  userPlan: UserPlan;
-  customizationPurchased: boolean;
-  iapAvailable: boolean;
   onLogout: () => void;
-  onResetPassword: () => void;
-  onUpdateEmail: () => void;
-  onConfirmDelete: () => void;
-  onConfirmDeleteAllBooks: () => void;
-  onRestorePurchase?: () => void;
-  onManageSubscription?: () => void;
-  onManageStorage?: () => void;
-  onManageSharedLinks?: () => void;
-  onManageSync?: () => void;
+  onManageSync: () => void;
 }
 
-const AccountActions: React.FC<AccountActionsProps> = ({
-  userEmail,
-  planName,
-  userPlan,
-  customizationPurchased,
-  iapAvailable,
-  onLogout,
-  onResetPassword,
-  onUpdateEmail,
-  onConfirmDelete,
-  onConfirmDeleteAllBooks,
-  onRestorePurchase,
-  onManageSubscription,
-  onManageStorage,
-  onManageSharedLinks,
-  onManageSync,
-}) => {
+const AccountActions: React.FC<AccountActionsProps> = ({ onLogout, onManageSync }) => {
   const _ = useTranslation();
-  const { appService } = useEnv();
-  const [pendingAction, setPendingAction] = useState<'account' | 'books' | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const confirmations = {
-    account: {
-      title: _('Delete Your Account?'),
-      message: _(
-        'This action cannot be undone. All your data in the cloud will be permanently deleted.',
-      ),
-      onConfirm: onConfirmDelete,
-    },
-    books: {
-      title: _('Delete All Books?'),
-      message: _(
-        'This action cannot be undone. Every book will be removed from this device and from your Readest cloud library, along with reading progress, bookmarks, and annotations. Books you imported in place keep their original files, and books uploaded to cloud storage stay there until you remove them under Manage Storage. Other signed-in devices keep their own copies.',
-      ),
-      onConfirm: onConfirmDeleteAllBooks,
-    },
+  const handleChangePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const currentPassword = String(form.get('currentPassword') || '');
+    const newPassword = String(form.get('newPassword') || '');
+    if (newPassword !== String(form.get('confirmPassword') || '')) {
+      setError(_('The new passwords do not match'));
+      return;
+    }
+    setError('');
+    setSaving(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setChangingPassword(false);
+      eventDispatcher.dispatch('toast', { type: 'success', message: _('Password changed') });
+    } catch (cause) {
+      setError(
+        cause instanceof BookRoomAuthError && cause.status === 401
+          ? _('The current password is incorrect')
+          : cause instanceof Error
+            ? cause.message
+            : _('Failed to change the password'),
+      );
+    } finally {
+      setSaving(false);
+    }
   };
-  const confirmation = pendingAction ? confirmations[pendingAction] : null;
 
   return (
     <>
-      {confirmation && (
-        <DeleteConfirmationModal
-          key={`${pendingAction}:${userEmail}`}
-          title={confirmation.title}
-          message={confirmation.message}
-          requireTypedConfirmation={pendingAction === 'account'}
-          onCancel={() => setPendingAction(null)}
-          onConfirm={async () => {
-            await confirmation.onConfirm();
-            setPendingAction(null);
-          }}
-        >
-          {pendingAction === 'account' && (
-            <div className='mb-4 flex flex-col gap-2 text-sm'>
-              <p className='break-words font-semibold' dir='auto'>
-                {userEmail}
-              </p>
-              <p>{planName}</p>
-              {(userPlan !== 'free' || customizationPurchased) && (
-                <p className='font-semibold'>{_('This account has a paid plan or purchases.')}</p>
-              )}
-            </div>
-          )}
-        </DeleteConfirmationModal>
-      )}
       <div className='flex flex-col gap-4 md:grid md:grid-cols-2 lg:grid-cols-3'>
-        {appService?.hasIAP && iapAvailable ? (
-          <button
-            onClick={onRestorePurchase}
-            className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-          >
-            {_('Restore Purchase')}
-          </button>
-        ) : (
-          userPlan !== 'free' && (
-            <button
-              onClick={onManageSubscription}
-              className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-            >
-              {_('Manage Subscription')}
-            </button>
-          )
-        )}
-        {onManageSync && (
-          <button
-            onClick={onManageSync}
-            className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-          >
-            {_('Manage Sync')}
-          </button>
-        )}
-        {onManageStorage && (
-          <button
-            onClick={onManageStorage}
-            className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-          >
-            {_('Manage Storage')}
-          </button>
-        )}
-        {onManageSharedLinks && (
-          <button
-            onClick={onManageSharedLinks}
-            className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-          >
-            {_('Manage Shared Links')}
-          </button>
-        )}
-        <button
-          onClick={onResetPassword}
-          className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-        >
-          {_('Reset Password')}
+        <button onClick={onManageSync} className={BUTTON_CLASS}>
+          {_('Manage Sync')}
         </button>
-        <button
-          onClick={onUpdateEmail}
-          className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-        >
-          {_('Update Email')}
+        <button onClick={() => setChangingPassword((open) => !open)} className={BUTTON_CLASS}>
+          {_('Change Password')}
         </button>
-        <button
-          onClick={onLogout}
-          className='bg-base-300 hover:bg-base-content/15 text-base-content border-base-content/10 eink-bordered w-full rounded-lg border px-6 py-3 font-medium transition-colors duration-150 md:w-auto'
-        >
+        <button onClick={onLogout} className={BUTTON_CLASS}>
           {_('Sign Out')}
         </button>
       </div>
-      <div className='eink-bordered mt-8 flex flex-col gap-3 rounded-lg border p-4 not-eink:border-rose-200'>
-        <h3 className='text-base-content text-sm font-semibold not-eink:text-rose-700'>
-          {_('Danger Zone')}
-        </h3>
-        <div className='flex flex-col gap-4 md:grid md:grid-cols-2 lg:grid-cols-3'>
-          <button
-            onClick={() => setPendingAction('books')}
-            className='eink-bordered w-full rounded-lg px-6 py-3 font-medium transition-colors duration-150 border not-eink:border-rose-300 not-eink:bg-rose-100 not-eink:text-rose-900 not-eink:hover:bg-rose-200 md:w-auto'
-          >
-            {_('Delete All Books')}
+      {changingPassword && (
+        <form
+          onSubmit={handleChangePassword}
+          className='eink-bordered border-base-300 flex max-w-md flex-col gap-3 rounded-lg border p-4'
+        >
+          <input
+            name='currentPassword'
+            type='password'
+            required
+            autoComplete='current-password'
+            placeholder={_('Current password')}
+            className={INPUT_CLASS}
+            disabled={saving}
+          />
+          <input
+            name='newPassword'
+            type='password'
+            required
+            minLength={8}
+            autoComplete='new-password'
+            placeholder={_('New password (at least 8 characters)')}
+            className={INPUT_CLASS}
+            disabled={saving}
+          />
+          <input
+            name='confirmPassword'
+            type='password'
+            required
+            minLength={8}
+            autoComplete='new-password'
+            placeholder={_('Confirm new password')}
+            className={INPUT_CLASS}
+            disabled={saving}
+          />
+          {error && (
+            <p role='alert' className='text-error text-sm'>
+              {error}
+            </p>
+          )}
+          <button type='submit' className='btn btn-primary rounded-lg' disabled={saving}>
+            {saving && <span className='loading loading-spinner loading-sm' aria-hidden='true' />}
+            {_('Save')}
           </button>
-          <button
-            onClick={() => setPendingAction('account')}
-            className='eink-bordered w-full rounded-lg px-6 py-3 font-medium transition-colors duration-150 border not-eink:border-rose-300 not-eink:bg-rose-100 not-eink:text-rose-900 not-eink:hover:bg-rose-200 md:w-auto'
-          >
-            {_('Delete Account')}
-          </button>
-        </div>
-      </div>
+        </form>
+      )}
     </>
   );
 };

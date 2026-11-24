@@ -9,13 +9,12 @@ import type { AppService } from '@/types/system';
 import { INDETERMINATE_PROGRESS, type ProgressHandler } from '@/utils/transfer';
 
 /**
- * Issue #5062 — cloud sync providers are independently selectable, so a
- * per-book Upload/Download must route to whichever of {Readest Cloud, a file
- * backend} the user has switched on, instead of assuming exactly one.
- *
- * `isReadestCloudEnabled` and `getActiveFileSyncBackends` are settable per
- * test (same pattern as useBooksSync-routing.test.tsx) so every routing
- * branch can be exercised directly, without rendering the whole library page.
+ * Per-book Upload/Download route to the one remote the book belongs to
+ * (ADR 0010): BookRoom books through Readest Cloud, backend-owned books
+ * through that backend. `isReadestCloudEnabled` and
+ * `getActiveFileSyncBackends` are settable per test (same pattern as
+ * useBooksSync-routing.test.tsx) so every routing branch can be exercised
+ * directly, without rendering the whole library page.
  */
 
 const routing = vi.hoisted(() => ({
@@ -52,6 +51,10 @@ vi.mock('@/hooks/useTranslation', () => ({
 vi.mock('@/services/sync/cloudSyncProvider', () => ({
   isReadestCloudEnabled: () => routing.readestEnabled,
   getActiveFileSyncBackends: () => routing.backends,
+  resolveBookSyncGate: (_settings: unknown, book: { remote?: string }) => ({
+    readest: routing.readestEnabled && (book.remote ?? 'local') === 'bookroom',
+    backends: routing.backends.filter((kind) => kind === book.remote),
+  }),
 }));
 
 vi.mock('@/services/sync/syncCategories', () => ({
@@ -82,6 +85,7 @@ const makeBook = (over: Partial<Book> = {}): Book => ({
   author: 'Author',
   createdAt: 1000,
   updatedAt: 1000,
+  remote: 'bookroom',
   ...over,
 });
 
@@ -108,8 +112,8 @@ beforeEach(() => {
   routing.backends = [];
 });
 
-describe('useBookTransferActions upload routing (issue #5062)', () => {
-  it('reaches every enabled destination when Readest Cloud and a file backend are both on', async () => {
+describe('useBookTransferActions upload routing (ADR 0010)', () => {
+  it('uploads a BookRoom book through Readest Cloud, not an enabled backend', async () => {
     routing.readestEnabled = true;
     routing.backends = ['gdrive'];
 
@@ -117,8 +121,21 @@ describe('useBookTransferActions upload routing (issue #5062)', () => {
     const book = makeBook();
     const ok = await result.current.handleBookUpload(book);
 
-    expect(runFileBookUpload).toHaveBeenCalledWith(envConfig, book);
+    expect(runFileBookUpload).not.toHaveBeenCalled();
     expect(queueUpload).toHaveBeenCalledWith(book, 1);
+    expect(ok).toBe(true);
+  });
+
+  it('uploads a file-backend book to its own backend, not to Readest Cloud', async () => {
+    routing.readestEnabled = true;
+    routing.backends = ['gdrive'];
+
+    const { result } = setup();
+    const book = makeBook({ remote: 'gdrive' });
+    const ok = await result.current.handleBookUpload(book);
+
+    expect(runFileBookUpload).toHaveBeenCalledWith(envConfig, book);
+    expect(queueUpload).not.toHaveBeenCalled();
     expect(ok).toBe(true);
   });
 
@@ -161,12 +178,12 @@ describe('useBookTransferActions upload with Books sync off', () => {
     });
   });
 
-  it('still uploads to an enabled file backend', async () => {
+  it('still uploads a file-backend book to its backend', async () => {
     routing.booksSyncEnabled = false;
     routing.backends = ['gdrive'];
 
     const { result } = setup();
-    const book = makeBook();
+    const book = makeBook({ remote: 'gdrive' });
     const ok = await result.current.handleBookUpload(book);
 
     expect(runFileBookUpload).toHaveBeenCalledWith(envConfig, book);
@@ -181,7 +198,7 @@ describe('useBookTransferActions upload with Books sync off', () => {
     const dispatchSpy = vi.spyOn(eventDispatcher, 'dispatch');
 
     const { result } = setup();
-    const ok = await result.current.handleBookUpload(makeBook());
+    const ok = await result.current.handleBookUpload(makeBook({ remote: 'gdrive' }));
 
     expect(ok).toBe(false);
     const toastCalls = dispatchSpy.mock.calls.filter(([event]) => event === 'toast');
@@ -193,7 +210,7 @@ describe('useBookTransferActions upload with Books sync off', () => {
   });
 });
 
-describe('useBookTransferActions download routing (issue #5062)', () => {
+describe('useBookTransferActions download routing (ADR 0010)', () => {
   it.each([
     'webdav',
     'gdrive',
@@ -206,8 +223,8 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     const dispatchSpy = vi.spyOn(eventDispatcher, 'dispatch');
     const { result, updateBook } = setup();
     const books = [
-      makeBook({ uploadedAt: 12345 }),
-      makeBook({ hash: 'book-2', uploadedAt: 12345 }),
+      makeBook({ uploadedAt: 12345, remote: provider }),
+      makeBook({ hash: 'book-2', uploadedAt: 12345, remote: provider }),
     ];
 
     const results = await Promise.all(
@@ -222,12 +239,13 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     expect(queueDownload).not.toHaveBeenCalled();
     expect(dispatchSpy.mock.calls.filter(([event]) => event === 'toast')).toHaveLength(0);
   });
-  it('tries file mirrors first because uploadedAt does not identify which provider has the book (#5009)', async () => {
+
+  it('downloads a file-backend book from its own backend rather than Readest Cloud (#5009)', async () => {
     routing.readestEnabled = true;
     routing.backends = ['webdav'];
 
     const { result } = setup();
-    const book = makeBook({ uploadedAt: 12345 });
+    const book = makeBook({ uploadedAt: 12345, remote: 'webdav' });
     const ok = await result.current.handleBookDownload(book, { queued: true });
 
     expect(runFileBookDownload).toHaveBeenCalledWith(envConfig, book, expect.any(Function));
@@ -235,16 +253,15 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     expect(ok).toBe(true);
   });
 
-  it('falls back to Readest Cloud when no enabled file mirror holds the book', async () => {
+  it('queues a BookRoom book through Readest Cloud, ignoring enabled backends', async () => {
     routing.readestEnabled = true;
     routing.backends = ['webdav'];
-    runFileBookDownload.mockResolvedValueOnce(false);
 
     const { result } = setup();
     const book = makeBook({ uploadedAt: 12345 });
     const ok = await result.current.handleBookDownload(book, { queued: true });
 
-    expect(runFileBookDownload).toHaveBeenCalledWith(envConfig, book, expect.any(Function));
+    expect(runFileBookDownload).not.toHaveBeenCalled();
     expect(queueDownload).toHaveBeenCalledWith(book, 1, false);
     expect(ok).toBe(true);
   });
@@ -260,18 +277,17 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     expect(ok).toBe(true);
   });
 
-  it('falls back to an immediate Readest Cloud download when opening a cloud-shelf book', async () => {
+  it('downloads a BookRoom book immediately when opening it', async () => {
     localStorage.clear();
     routing.readestEnabled = true;
     routing.backends = ['webdav'];
-    runFileBookDownload.mockResolvedValueOnce(false);
     const downloadBook = vi.fn(async () => {});
 
     const { result, updateBook } = setup({ downloadBook } as unknown as AppService);
     const book = makeBook({ uploadedAt: 12345 });
     const ok = await result.current.handleBookDownload(book, { queued: false });
 
-    expect(runFileBookDownload).toHaveBeenCalledWith(envConfig, book, expect.any(Function));
+    expect(runFileBookDownload).not.toHaveBeenCalled();
     expect(downloadBook).toHaveBeenCalledWith(book, false, false, expect.any(Function));
     expect(queueDownload).not.toHaveBeenCalled();
     expect(updateBook).toHaveBeenCalledWith(envConfig, book);
@@ -284,12 +300,12 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     });
   });
 
-  it('falls back to a file backend when the book is not in Readest Cloud storage', async () => {
+  it('downloads a file-backend book even when it was never uploaded to BookRoom', async () => {
     routing.readestEnabled = true;
     routing.backends = ['webdav'];
 
     const { result, updateBook } = setup();
-    const book = makeBook({ uploadedAt: null });
+    const book = makeBook({ uploadedAt: null, remote: 'webdav' });
     const ok = await result.current.handleBookDownload(book, { queued: true });
 
     expect(runFileBookDownload).toHaveBeenCalledWith(envConfig, book, expect.any(Function));
@@ -309,7 +325,7 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     );
 
     const { result, getProgress } = setup();
-    const book = makeBook({ uploadedAt: 12345 });
+    const book = makeBook({ uploadedAt: 12345, remote: 'gdrive' });
     const promise = result.current.handleBookDownload(book, { queued: true });
 
     // The native plugin cannot report a byte total up front, so the entry
@@ -375,7 +391,7 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
       });
 
       const { result, getProgress } = setup();
-      const book = makeBook({ uploadedAt: 12345 });
+      const book = makeBook({ uploadedAt: 12345, remote: 'gdrive' });
       await result.current.handleBookDownload(book, { queued: true });
       expect(getProgress()).toEqual({});
 

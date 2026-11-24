@@ -1,4 +1,4 @@
-import { READEST_WEB_BASE_URL } from '@/services/constants';
+import { getBaseUrl } from '@/services/environment';
 
 export type AnnotationDeepLink = {
   bookHash: string;
@@ -12,17 +12,13 @@ export type AnnotationDeepLink = {
  */
 export type AnnotationLinkType = 'app' | 'web';
 
-const ANNOTATION_PATH_PREFIX = '/o/book/';
-
 /**
- * Shared readest:// / https://web.readest.com URL parsing: validates the
- * scheme and returns a uniform path-segment list, or null if neither
- * matches. Pass `allowWebHost: false` for links only ever sent natively
- * (widget group taps).
+ * Shared readest:// URL parsing: validates the scheme and returns a uniform
+ * path-segment list, or null if it doesn't match. Web links point at the
+ * BookRoom server's /o page, which opens the app itself.
  */
 const parseReadestUrl = (
   url: string,
-  { allowWebHost = true }: { allowWebHost?: boolean } = {},
 ): { segments: string[]; searchParams: URLSearchParams } | null => {
   let parsed: URL;
   try {
@@ -30,38 +26,24 @@ const parseReadestUrl = (
   } catch {
     return null;
   }
-
-  let segments: string[];
-
-  if (parsed.protocol === 'readest:') {
-    // readest:// URLs park their first path segment in `host`, not pathname.
-    segments = [parsed.host, ...parsed.pathname.split('/')].filter(Boolean);
-  } else if (
-    allowWebHost &&
-    (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
-    parsed.host === 'web.readest.com'
-  ) {
-    segments = parsed.pathname.split('/').filter(Boolean);
-
-    // The HTTPS landing page is prefixed with /o/; strip it for uniform parsing.
-    if (segments[0] !== 'o') return null;
-    segments.shift();
-  } else {
-    return null;
-  }
-
+  if (parsed.protocol !== 'readest:') return null;
+  // readest:// URLs park their first path segment in `host`, not pathname.
+  const segments = [parsed.host, ...parsed.pathname.split('/')].filter(Boolean);
   return { segments, searchParams: parsed.searchParams };
 };
 
 /**
- * Build the canonical HTTPS URL for an annotation. Used in markdown export
- * and Readwise sync. Mobile App Links (web.readest.com) intercept this URL
- * and open the native app; on desktop browsers it resolves to the smart
- * landing page at /o/book/{hash}/annotation/{id}.
+ * Build the HTTPS URL for an annotation, used in markdown export and Readwise
+ * sync: the /o landing page of the BookRoom server that hosts the web build,
+ * which opens the app or continues in the browser. Without a server (signed
+ * out of a native build) the custom-scheme link is the only one that works.
  */
-export const buildAnnotationWebUrl = ({ bookHash, noteId, cfi }: AnnotationDeepLink): string => {
-  const base = `${READEST_WEB_BASE_URL}${ANNOTATION_PATH_PREFIX}${bookHash}/annotation/${noteId}`;
-  return cfi ? `${base}?cfi=${encodeURIComponent(cfi)}` : base;
+export const buildAnnotationWebUrl = (link: AnnotationDeepLink): string => {
+  const base = getBaseUrl();
+  if (!base) return buildAnnotationAppUrl(link);
+  const params = new URLSearchParams({ book: link.bookHash, note: link.noteId });
+  if (link.cfi) params.set('cfi', link.cfi);
+  return `${base}/o?${params.toString()}`;
 };
 
 /**
@@ -83,12 +65,33 @@ export const buildAnnotationUrl = (
 ): string => (linkType === 'app' ? buildAnnotationAppUrl(link) : buildAnnotationWebUrl(link));
 
 /**
- * Parse an incoming readest:// or https://web.readest.com annotation URL.
- * Accepts the new hierarchical form (book/{hash}/annotation/{id}) and the
- * legacy flat form (annotation/{hash}/{id}) emitted by older Readwise syncs.
+ * The /o landing-page link {@link buildAnnotationWebUrl} makes, on whichever
+ * BookRoom server issued it.
+ */
+const parseAnnotationWebUrl = (url: string): AnnotationDeepLink | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  if (!/\/o\/?$/.test(parsed.pathname)) return null;
+  const bookHash = parsed.searchParams.get('book');
+  const noteId = parsed.searchParams.get('note');
+  if (!bookHash || !noteId) return null;
+  return { bookHash, noteId, cfi: parsed.searchParams.get('cfi') || undefined };
+};
+
+/**
+ * Parse an incoming annotation link: the BookRoom /o web link, or readest://
+ * in the hierarchical form (book/{hash}/annotation/{id}) or the legacy flat
+ * form (annotation/{hash}/{id}) emitted by older Readwise syncs.
  * Returns null if the URL doesn't match.
  */
 export const parseAnnotationDeepLink = (url: string): AnnotationDeepLink | null => {
+  const web = parseAnnotationWebUrl(url);
+  if (web) return web;
   const parsed = parseReadestUrl(url);
   if (!parsed) return null;
   const { segments, searchParams } = parsed;
@@ -110,7 +113,7 @@ export const parseAnnotationDeepLink = (url: string): AnnotationDeepLink | null 
 };
 
 /**
- * Parse an incoming readest:// or https://web.readest.com book-open URL.
+ * Parse an incoming readest:// book-open URL.
  * Matches only the bare form `book/{hash}` (the widget tap target); the
  * 4-segment annotation form `book/{hash}/annotation/{id}` is handled by
  * parseAnnotationDeepLink and must NOT match here.
@@ -133,35 +136,13 @@ export const parseBookDeepLink = (url: string): { bookHash: string; autoplay?: b
 };
 
 /**
- * Parse a CrossPoint reader sign-in link: `https://web.readest.com/link?code=…`
- * (from the Readest card on the reader's web Settings page) or
- * `readest://link?code=…` (from the web /link page). The code may be empty.
- */
-export const parseDeviceLinkDeepLink = (url: string): { code: string } | null => {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  const path = parsed.pathname.replace(/\/+$/, '');
-  const isAppLink = parsed.protocol === 'readest:' && parsed.host === 'link' && path === '';
-  const isWebLink =
-    (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
-    parsed.host === 'web.readest.com' &&
-    path === '/link';
-  if (!isAppLink && !isWebLink) return null;
-  return { code: parsed.searchParams.get('code') ?? '' };
-};
-
-/**
  * Parse an incoming `readest://widget-group/{groupBy}/{groupId}` deep link (a
  * "browse groups" tile tap), where `groupId` is the group's Library id.
  */
 export const parseWidgetGroupDeepLink = (
   url: string,
 ): { groupBy: string; groupId: string } | null => {
-  const parsed = parseReadestUrl(url, { allowWebHost: false });
+  const parsed = parseReadestUrl(url);
   if (!parsed) return null;
   const { segments } = parsed;
   if (segments.length === 3 && segments[0] === 'widget-group' && segments[1] && segments[2]) {
@@ -181,7 +162,7 @@ export const parseWidgetGroupDeepLink = (
  * currently-selected shelf's id.
  */
 export const parseWidgetEditShelfDeepLink = (url: string): { shelfId: string } | null => {
-  const parsed = parseReadestUrl(url, { allowWebHost: false });
+  const parsed = parseReadestUrl(url);
   if (!parsed) return null;
   const { segments } = parsed;
   if (segments.length === 2 && segments[0] === 'widget-edit-shelf' && segments[1]) {

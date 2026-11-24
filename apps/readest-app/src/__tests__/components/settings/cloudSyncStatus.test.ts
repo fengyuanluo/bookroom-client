@@ -3,34 +3,21 @@ import {
   canToggleCloudProvider,
   getReadestCloudRowStatus,
   getThirdPartyRowStatus,
-  shouldShowCloudProviderBadge,
 } from '@/components/settings/integrations/cloudSyncStatus';
 
 const _ = (key: string) => key;
 
 describe('getReadestCloudRowStatus', () => {
   test('signed out wins over everything', () => {
-    expect(getReadestCloudRowStatus(_, { signedIn: false, planLoading: true, enabled: true })).toBe(
-      'Not signed in',
-    );
-  });
-
-  test('loading while the plan resolves', () => {
-    expect(getReadestCloudRowStatus(_, { signedIn: true, planLoading: true, enabled: true })).toBe(
-      '…',
-    );
+    expect(getReadestCloudRowStatus(_, { signedIn: false, enabled: true })).toBe('Not signed in');
   });
 
   test('reports off when the user unchecked it', () => {
-    expect(
-      getReadestCloudRowStatus(_, { signedIn: true, planLoading: false, enabled: false }),
-    ).toBe('Off');
+    expect(getReadestCloudRowStatus(_, { signedIn: true, enabled: false })).toBe('Off');
   });
 
   test('reports active when checked', () => {
-    expect(getReadestCloudRowStatus(_, { signedIn: true, planLoading: false, enabled: true })).toBe(
-      'Active',
-    );
+    expect(getReadestCloudRowStatus(_, { signedIn: true, enabled: true })).toBe('Active');
   });
 });
 
@@ -39,7 +26,6 @@ describe('getThirdPartyRowStatus', () => {
     enabled: true,
     configured: true,
     syncing: false,
-    paused: false,
     lastError: null,
     syncBooks: true,
     booksBackedUpElsewhere: false,
@@ -52,25 +38,15 @@ describe('getThirdPartyRowStatus', () => {
     expect(getThirdPartyRowStatus(_, { ...base, enabled: false })).toBe('Configured');
   });
 
-  test('paused outranks syncing, errors, and warnings', () => {
-    expect(
-      getThirdPartyRowStatus(_, { ...base, paused: true, syncing: true, lastError: 'x' }),
-    ).toBe('Paused — plan required');
-  });
-
   test('syncing while a run is in flight', () => {
     expect(getThirdPartyRowStatus(_, { ...base, syncing: true })).toBe('Syncing…');
   });
 
-  test('needs reauth when the web token is gone (outranks syncing/active, not paused)', () => {
+  test('needs reauth when the web token is gone (outranks syncing/active)', () => {
     expect(getThirdPartyRowStatus(_, { ...base, needsReauth: true })).toBe('Reconnect required');
     // A gone token must never read as active or as an in-flight sync.
     expect(getThirdPartyRowStatus(_, { ...base, needsReauth: true, syncing: true })).toBe(
       'Reconnect required',
-    );
-    // But a plan-level pause still outranks it.
-    expect(getThirdPartyRowStatus(_, { ...base, needsReauth: true, paused: true })).toBe(
-      'Paused — plan required',
     );
   });
 
@@ -94,7 +70,6 @@ describe('getThirdPartyRowStatus: book file coverage', () => {
     enabled: true,
     configured: true,
     syncing: false,
-    paused: false,
     lastError: null,
     syncBooks: false,
   };
@@ -111,72 +86,15 @@ describe('getThirdPartyRowStatus: book file coverage', () => {
 });
 
 describe('canToggleCloudProvider', () => {
-  test('premium and configured can be toggled', () => {
-    expect(canToggleCloudProvider({ isPremium: true, isConfigured: true, isEnabled: false })).toBe(
-      true,
-    );
+  test('a configured provider can be toggled', () => {
+    expect(canToggleCloudProvider({ isConfigured: true, isEnabled: false })).toBe(true);
   });
 
-  test('premium, unconfigured, and not enabled cannot be toggled', () => {
-    expect(canToggleCloudProvider({ isPremium: true, isConfigured: false, isEnabled: false })).toBe(
-      false,
-    );
+  test('unconfigured and not enabled cannot be toggled', () => {
+    expect(canToggleCloudProvider({ isConfigured: false, isEnabled: false })).toBe(false);
   });
 
-  test('a lapsed-plan user can always switch an enabled provider off', () => {
-    expect(canToggleCloudProvider({ isPremium: false, isConfigured: false, isEnabled: true })).toBe(
-      true,
-    );
-  });
-
-  test('not premium and not enabled cannot be toggled', () => {
-    expect(
-      canToggleCloudProvider({ isPremium: false, isConfigured: false, isEnabled: false }),
-    ).toBe(false);
-  });
-
-  test('premium with cleared config but still enabled can be toggled (rescue)', () => {
-    expect(canToggleCloudProvider({ isPremium: true, isConfigured: false, isEnabled: true })).toBe(
-      true,
-    );
-  });
-});
-
-describe('shouldShowCloudProviderBadge', () => {
-  test('signed out on a hosted deployment sees the tier chip and stays gated', () => {
-    // The chip and the gate have to move together: a signed-out visitor to a
-    // hosted deployment is not entitled, so the row is badged AND unusable.
-    expect(
-      shouldShowCloudProviderBadge({ signedIn: false, planLoading: false, isPremium: false }),
-    ).toBe(true);
-    expect(canToggleCloudProvider({ isPremium: false, isConfigured: true, isEnabled: false })).toBe(
-      false,
-    );
-  });
-
-  test('signed out on a self-hosted deployment does not (#6093)', () => {
-    // Self-hosting unlocks cloud sync with or without a signed-in user, so the
-    // chip would label a feature the operator already has as premium.
-    expect(
-      shouldShowCloudProviderBadge({ signedIn: false, planLoading: false, isPremium: true }),
-    ).toBe(false);
-  });
-
-  test('stays hidden while a signed-in user plan is still resolving', () => {
-    expect(
-      shouldShowCloudProviderBadge({ signedIn: true, planLoading: true, isPremium: false }),
-    ).toBe(false);
-  });
-
-  test('a resolved free plan sees the tier chip', () => {
-    expect(
-      shouldShowCloudProviderBadge({ signedIn: true, planLoading: false, isPremium: false }),
-    ).toBe(true);
-  });
-
-  test('an entitled user never sees it', () => {
-    expect(
-      shouldShowCloudProviderBadge({ signedIn: true, planLoading: false, isPremium: true }),
-    ).toBe(false);
+  test('an enabled provider can always be switched off, even with cleared config', () => {
+    expect(canToggleCloudProvider({ isConfigured: false, isEnabled: true })).toBe(true);
   });
 });

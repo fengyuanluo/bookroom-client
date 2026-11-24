@@ -4,14 +4,10 @@ import type { TTSVoicesGroup } from '@/services/tts/types';
 import type { VoiceLibrary } from '@/services/tts/voiceLibrary';
 
 const state = vi.hoisted(() => ({
-  user: { id: 'u' } as { id: string } | null,
-  push: vi.fn(),
   range: null as Range | null,
   play: vi.fn(),
 }));
 
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: state.user }) }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: state.push }) }));
 vi.mock('@/context/EnvContext', () => ({ useEnv: () => ({ envConfig: {}, appService: null }) }));
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (key: string, opts?: Record<string, unknown>) =>
@@ -29,7 +25,6 @@ vi.mock('@/services/tts/voicePreview', () => ({
   primeVoicePreview: vi.fn(),
   suspendReadingForPreview: vi.fn().mockResolvedValue(false),
   playVoicePreview: state.play,
-  READEST_TTS_ENGINE: 'readest-tts',
 }));
 
 import { TTSUtils } from '@/services/tts/TTSUtils';
@@ -42,12 +37,11 @@ const VOICES: Record<string, TTSVoicesGroup[]> = {
       name: 'Readest Voice',
       engine: 'readest-tts',
       voices: [
-        { id: 'kokoro:af_heart', name: 'Heart', lang: 'en-US', tier: 'plus', gender: 'female' },
+        { id: 'kokoro:af_heart', name: 'Heart', lang: 'en-US', gender: 'female' },
         {
           id: 'omnivoice:ethan',
           name: 'Ethan',
           lang: 'en-US',
-          tier: 'pro',
           gender: 'male',
           disabled: true,
         },
@@ -93,7 +87,6 @@ const renderPage = (props: Partial<React.ComponentProps<typeof TTSVoicesPage>> =
 describe('TTSVoicesPage', () => {
   beforeEach(() => {
     localStorage.clear();
-    state.user = { id: 'u' };
     state.range = null;
     state.play.mockReset().mockResolvedValue(undefined);
   });
@@ -114,15 +107,6 @@ describe('TTSVoicesPage', () => {
     fireEvent.click(await screen.findByText('Denise'));
     expect(TTSUtils.getDefaultVoice('fr')?.voiceId).toBe('fr-FR-DeniseNeural');
     expect(TTSUtils.getDefaultVoice('en')?.voiceId).toBe('en-GB-RyanNeural');
-  });
-
-  it('a voice the plan lacks can be previewed but leads to the plans to be chosen', async () => {
-    renderPage();
-    fireEvent.click(await screen.findByText('Ethan'));
-    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/user/));
-    expect(TTSUtils.getDefaultVoice('en')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Preview Ethan'));
-    await waitFor(() => expect(state.play).toHaveBeenCalled());
   });
 
   it('from the library, a preview reads a sample in the voice’s own language', async () => {
@@ -153,15 +137,5 @@ describe('TTSVoicesPage', () => {
       lang: 'en',
       text: 'Call me Ishmael. Some years ago, never mind how long precisely, I went to sea.',
     });
-  });
-
-  it('a signed-out reader is sent to sign in to preview Readest Voice, not other engines', async () => {
-    state.user = null;
-    renderPage();
-    fireEvent.click(await screen.findByLabelText('Preview Heart'));
-    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/auth/));
-    expect(state.play).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByLabelText('Preview Ryan'));
-    await waitFor(() => expect(state.play).toHaveBeenCalled());
   });
 });

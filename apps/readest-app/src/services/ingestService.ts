@@ -2,7 +2,8 @@ import type { Book, BookLookupIndex } from '@/types/book';
 import type { AppService, OsPlatform } from '@/types/system';
 import type { SystemSettings } from '@/types/settings';
 import { transferManager } from '@/services/transferManager';
-import { isReadestCloudStorageActive } from '@/services/sync/cloudSyncProvider';
+import { syncsBookToBookRoom } from '@/services/sync/cloudSyncProvider';
+import { importRemote } from '@/services/remote';
 import { normalizeFilePathForIndex } from '@/services/bookService';
 import { isContentURI, isValidURL } from '@/utils/misc';
 import { isPseStreamFileName } from '@/services/opds/pseStream';
@@ -206,6 +207,7 @@ export async function ingestFile(
     lookupIndex: opts.lookupIndex,
     transient: opts.transient,
     inPlace,
+    remote: importRemote(settings),
   });
   if (!book) return null;
 
@@ -248,17 +250,14 @@ export async function ingestFile(
   // they are equivalent to a hash-copy book — only the local storage
   // location differs. uploadBook reads straight from book.filePath in that
   // case; downloads on other devices land in Books/<hash>/ as a normal copy.
-  // Readest Cloud storage is written only when Readest Cloud is one of the
-  // enabled providers (#5062 lets several run at once). When it is unchecked,
-  // this gate is false and the file-sync engine mirrors the import instead
-  // (including Sent books, which reach other devices via each enabled backend
-  // whose syncBooks toggle is on).
+  // BookRoom storage takes only BookRoom's own books (ADR 0010); a book added
+  // to a file-sync backend reaches it through that backend's library pass.
   if (
     !opts.transient &&
     isLoggedIn &&
     !book.uploadedAt &&
     (opts.forceUpload || settings.syncCategories?.book !== false) &&
-    isReadestCloudStorageActive(settings)
+    syncsBookToBookRoom(settings, book)
   ) {
     transferManager.queueUpload(book);
   }

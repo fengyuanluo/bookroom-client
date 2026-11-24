@@ -7,6 +7,7 @@ import {
   getProxiedURL,
   probeAuth,
   withOriginSuppressed,
+  upstreamAuthHeader,
 } from '@/app/opds/utils/opdsReq';
 import { normalizeCustomHeaders } from '@/utils/customHeaders';
 import { allowsSelfSignedCertAt, tlsFetch } from '@/utils/tls';
@@ -62,7 +63,7 @@ export const createPseStreamPageLoader = (data: PseStreamData) => {
     const headers: Record<string, string> = withOriginSuppressed({
       'User-Agent': READEST_OPDS_USER_AGENT,
       ...(!useProxy ? customHeaders : {}),
-      ...(authHeader ? { Authorization: authHeader } : {}),
+      ...(authHeader ? { [upstreamAuthHeader(useProxy)]: authHeader } : {}),
     });
     const fetch = isTauriAppPlatform() ? tauriFetch : window.fetch;
     const res = await tlsFetch(fetch, fetchURL, { headers }, allowSelfSignedCert);

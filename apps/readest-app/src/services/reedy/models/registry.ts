@@ -114,10 +114,6 @@ function chatModelIdFor(settings: AISettings): string {
   switch (settings.provider) {
     case 'ollama':
       return settings.ollamaModel || 'llama3.2';
-    case 'ai-gateway':
-      return (
-        settings.aiGatewayCustomModel || settings.aiGatewayModel || 'google/gemini-2.5-flash-lite'
-      );
     case 'openrouter':
       return settings.openrouterModel || 'openai/gpt-4o-mini';
   }
@@ -169,8 +165,6 @@ function embeddingModelIdFor(settings: AISettings): string {
   switch (settings.provider) {
     case 'ollama':
       return settings.ollamaEmbeddingModel || 'nomic-embed-text';
-    case 'ai-gateway':
-      return settings.aiGatewayEmbeddingModel || 'openai/text-embedding-3-small';
     case 'openrouter':
       return settings.openrouterEmbeddingModel || 'openai/text-embedding-3-small';
   }

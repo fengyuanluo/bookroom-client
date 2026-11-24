@@ -27,7 +27,6 @@ import BrightnessOverlay from './BrightnessOverlay';
 import { usePagination, viewPagination } from '../hooks/usePagination';
 import { useFoliateEvents } from '../hooks/useFoliateEvents';
 import { useProgressSync } from '../hooks/useProgressSync';
-import { useABSProgressSync } from '../hooks/useABSProgressSync';
 import { useProgressAutoSave } from '../hooks/useProgressAutoSave';
 import {
   CHUNKED_SECTION_THRESHOLD,
@@ -234,7 +233,6 @@ const FoliateViewer: React.FC<{
 
   useUICSS(bookKey);
   useProgressSync(bookKey);
-  useABSProgressSync(bookKey);
   useProgressAutoSave(bookKey);
   useBookCoverAutoSave(bookKey);
   const { syncState, conflictDetails, resolveWithLocal, resolveWithRemote } = useKOSync(bookKey);
@@ -1068,8 +1066,7 @@ const FoliateViewer: React.FC<{
       // Only applies to the primary book — first id in the route's `ids` —
       // so parallel views don't all jump to the same CFI.
       const cfiParam = searchParams?.get('cfi');
-      const idsParam =
-        searchParams?.get('ids') ?? window.location.pathname.split('/reader/')[1] ?? '';
+      const idsParam = searchParams?.get('ids') ?? '';
       const primaryId = idsParam.split(BOOK_IDS_SEPARATOR).filter(Boolean)[0];
       const thisId = bookKey.split('-')[0];
       const overrideLocation = cfiParam && primaryId === thisId ? cfiParam : null;

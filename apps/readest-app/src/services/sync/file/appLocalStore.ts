@@ -1,4 +1,5 @@
 import { Book } from '@/types/book';
+import type { FileSyncBackendKind } from './providerRegistry';
 import { AppService, BaseDir } from '@/types/system';
 import { SystemSettings } from '@/types/settings';
 import { EnvConfigType } from '@/services/environment';
@@ -54,16 +55,19 @@ const serializeLibraryAdd = async (
  * The app-backed {@link LocalStore} used by every file-sync consumer (the
  * reader hook and the library "Sync now" form). Consolidating the buffered +
  * streaming book/cover loaders here is the whole reason the bridge exists:
- * the logic used to be copy-pasted across both consumers.
+ * the logic used to be copy-pasted across both consumers. Books the engine
+ * discovers on the backend join the library as `remote`'s books (ADR 0010).
  */
 export const createAppLocalStore = ({
   appService,
   settings,
   envConfig,
+  remote,
 }: {
   appService: AppService;
   settings: SystemSettings;
   envConfig: EnvConfigType;
+  remote: FileSyncBackendKind;
 }): LocalStore => ({
   loadConfig: (book) => appService.loadBookConfig(book, settings),
   saveBookConfig: (book, config) => appService.saveBookConfig(book, config, settings),
@@ -137,6 +141,7 @@ export const createAppLocalStore = ({
       book.coverImageUrl = null;
     }
     book.syncedAt = Date.now();
+    book.remote = remote;
     // The caller owns file availability. Library discovery deliberately adds
     // cloud-shelf rows with `downloadedAt: null`; stamping them here would turn
     // metadata-only sync back into a false claim that the EPUB/PDF is on disk.

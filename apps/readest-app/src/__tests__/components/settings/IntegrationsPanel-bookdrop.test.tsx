@@ -17,16 +17,16 @@ vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (s: string, o?: Record<string, unknown>) =>
     s.replace(/\{\{(\w+)\}\}/g, (_m, k) => String(o?.[k] ?? '')),
 }));
-vi.mock('@/hooks/useQuotaStats', () => ({
-  useQuotaStats: () => ({ userProfilePlan: 'free', customizationPurchased: false }),
+const settingsState = vi.hoisted(() => ({
+  settings: {} as Record<string, unknown>,
+  requestedSubPage: null as string | null,
+  setRequestedSubPage: vi.fn(),
 }));
-vi.mock('@/store/settingsStore', () => ({
-  useSettingsStore: () => ({
-    settings: {},
-    requestedSubPage: null,
-    setRequestedSubPage: vi.fn(),
-  }),
-}));
+vi.mock('@/store/settingsStore', () => {
+  const useSettingsStore = () => settingsState;
+  useSettingsStore.getState = () => settingsState;
+  return { useSettingsStore };
+});
 vi.mock('@/services/environment', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/environment')>()),
   isTauriAppPlatform: () => true,
@@ -59,7 +59,10 @@ describe('IntegrationsPanel Nearby BookDrop section', () => {
     const sections = Array.from(document.querySelectorAll('[data-setting-id]')).map((el) =>
       el.getAttribute('data-setting-id'),
     );
-    expect(sections[0]).toBe('settings.integrations.localsend');
+    // The library-source selector leads the panel (ADR 0010); BookDrop is the
+    // first integration below it.
+    expect(sections[0]).toBe('settings.integrations.librarySource');
+    expect(sections[1]).toBe('settings.integrations.localsend');
     expect(within(bookDropSection()).getByText('Local Network')).toBeTruthy();
     expect(within(bookDropSection()).getByText('Nearby BookDrop')).toBeTruthy();
     // No longer buried in Content Sources.

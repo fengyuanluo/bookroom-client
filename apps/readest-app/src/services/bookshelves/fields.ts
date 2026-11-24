@@ -28,11 +28,6 @@ const textList = (value: unknown): string[] => {
 };
 const date = (value: string | undefined) =>
   value && Number.isFinite(Date.parse(value)) ? Date.parse(value) : undefined;
-/** Formats whose books play through the audiobook player rather than the reader. */
-const AUDIO_FORMATS = ['ABS', 'OPDSAUDIO', 'BOOKORBIT'];
-// Both copies matter: a metadata edit or a synced row can leave only one of them
-// (see src/utils/audiobook.ts), and reading just one misfiles podcasts as audiobooks.
-const absMediaType = (b: Book) => b.absMediaType ?? b.metadata?.absMediaType;
 export const BOOKSHELF_FIELDS: BookshelfField[] = [
   { id: 'title', label: _('Title'), kind: 'text', read: (b) => b.title },
   { id: 'author', label: _('Author'), kind: 'text', suggest: true, read: (b) => b.author },
@@ -143,52 +138,24 @@ export const BOOKSHELF_FIELDS: BookshelfField[] = [
     read: (b) => !!b.hasNarration,
   },
   {
-    id: 'audio',
-    label: _('Audiobook'),
-    kind: 'boolean',
-    read: (b) => AUDIO_FORMATS.includes(b.format) && !absMediaType(b),
-  },
-  {
-    id: 'mediaType',
-    choices: [
-      { value: 'ebook', label: _('Ebook') },
-      { value: 'audiobook', label: _('Audiobook') },
-      { value: 'podcast', label: _('Podcast') },
-    ],
-    label: _('Media type'),
-    kind: 'text',
-    read: (b) => absMediaType(b) || (AUDIO_FORMATS.includes(b.format) ? 'audiobook' : 'ebook'),
-  },
-  {
     id: 'availability',
     label: _('Availability'),
     kind: 'text',
     choices: [
       { value: 'local', label: _('On this device') },
       { value: 'cloud', label: _('In Readest Cloud') },
-      { value: 'streaming', label: _('Streaming') },
       { value: 'unavailable', label: _('Unavailable') },
     ],
     read: (b) =>
-      b.downloadedAt || b.absDownloadedAt
-        ? 'local'
-        : AUDIO_FORMATS.includes(b.format)
-          ? 'streaming'
-          : b.uploadedAt
-            ? 'cloud'
-            : b.filePath
-              ? 'local'
-              : 'unavailable',
+      b.downloadedAt ? 'local' : b.uploadedAt ? 'cloud' : b.filePath ? 'local' : 'unavailable',
   },
-  { id: 'duration', label: _('Audio duration (seconds)'), kind: 'number', read: (b) => b.duration },
-  { id: 'episodes', label: _('Episodes'), kind: 'number', read: (b) => b.episodeCount },
   {
     id: 'downloaded',
     label: _('Downloaded'),
     kind: 'boolean',
-    read: (b) => !!(b.downloadedAt || b.absDownloadedAt),
+    read: (b) => !!b.downloadedAt,
   },
-  { id: 'uploaded', label: _('In Readest Cloud'), kind: 'boolean', read: (b) => !!b.uploadedAt },
+  { id: 'uploaded', label: _('In Cloud'), kind: 'boolean', read: (b) => !!b.uploadedAt },
   {
     id: 'downloadStatus',
     label: _('Download status'),
@@ -199,12 +166,7 @@ export const BOOKSHELF_FIELDS: BookshelfField[] = [
       { value: 'cloudOnly', label: _('Cloud only') },
     ],
     read: (b) => {
-      // Streaming formats keep a server URL in filePath, not a local file.
-      const local = !!(
-        b.downloadedAt ||
-        b.absDownloadedAt ||
-        (b.filePath && !AUDIO_FORMATS.includes(b.format))
-      );
+      const local = !!(b.downloadedAt || b.filePath);
       if (!b.uploadedAt) return local ? 'localOnly' : undefined;
       return local ? 'downloaded' : 'cloudOnly';
     },

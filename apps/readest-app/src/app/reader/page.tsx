@@ -7,17 +7,13 @@ import { useAppUrlIngress } from '@/hooks/useAppUrlIngress';
 import { useOpenWithBooks } from '@/hooks/useOpenWithBooks';
 import { useOpenLaunchLinks } from '@/hooks/useOpenLaunchLinks';
 import { useHomeScreenWidgets } from '@/hooks/useHomeScreenWidgets';
-import { useOpenShareLink } from '@/hooks/useOpenShareLink';
-import { useOpenDeviceLink } from '@/hooks/useOpenDeviceLink';
-import { useClipUrlIngress } from '@/hooks/useClipUrlIngress';
 import { useRestoreLibraryOnRelaunch } from '@/hooks/useRestoreLibraryOnRelaunch';
 import { useSettingsStore } from '@/store/settingsStore';
 import { checkForAppUpdates, checkAppReleaseNotes } from '@/helpers/updater';
 import { tauriHandleSetAlwaysOnTop } from '@/utils/window';
-import ClipSignInAlert from '@/components/ClipSignInAlert';
 import Reader from './components/Reader';
 
-// This is only used for the Tauri app in the app router
+// The reader for every platform; the books come in the `ids` query parameter.
 export default function Page() {
   const _ = useTranslation();
   const { appService } = useEnv();
@@ -27,9 +23,6 @@ export default function Page() {
   useOpenWithBooks();
   useOpenLaunchLinks();
   useHomeScreenWidgets();
-  useOpenShareLink();
-  useOpenDeviceLink();
-  useClipUrlIngress();
   useRestoreLibraryOnRelaunch();
 
   useEffect(() => {
@@ -47,10 +40,5 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appService?.hasUpdater, settings.autoCheckUpdates]);
 
-  return (
-    <>
-      <Reader />
-      <ClipSignInAlert />
-    </>
-  );
+  return <Reader />;
 }

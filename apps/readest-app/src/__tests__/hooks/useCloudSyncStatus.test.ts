@@ -63,7 +63,10 @@ beforeEach(() => {
 
 describe('useCloudSyncStatus (issue #5910)', () => {
   it('reports a third-party backend as synced with no Readest account', () => {
-    mockSettings = { webdav: { enabled: true, lastSyncedAt: NOW - 60_000 } } as never;
+    mockSettings = {
+      readestCloud: { enabled: false },
+      webdav: { enabled: true, lastSyncedAt: NOW - 60_000 },
+    } as never;
     const { result } = renderHook(() => useCloudSyncStatus(0));
 
     expect(result.current.needsSignIn).toBe(false);
@@ -134,7 +137,10 @@ describe('useCloudSyncStatus (issue #5910)', () => {
     // Selecting Drive also switches Readest Cloud off, so nothing can sync —
     // and "Sign in to Sync" would be a lie, because signing in would not help.
     // Drive's own settings row carries the Reconnect CTA.
-    mockSettings = { googleDrive: { enabled: true, lastSyncedAt: NOW - 1_000 } } as never;
+    mockSettings = {
+      readestCloud: { enabled: false },
+      googleDrive: { enabled: true, lastSyncedAt: NOW - 1_000 },
+    } as never;
     const { result } = renderHook(() => useCloudSyncStatus(0));
 
     expect(result.current.providers).toEqual([]);

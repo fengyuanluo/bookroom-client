@@ -4,7 +4,6 @@ import {
   MdOutlineCloudDownload,
   MdOutlineCloudUpload,
   MdOutlineDelete,
-  MdOutlineDownloadForOffline,
   MdOutlineEdit,
   MdMenu,
   MdExpandMore,
@@ -32,7 +31,6 @@ import {
   getContributorNames,
   getSeriesIndex,
 } from '@/utils/book';
-import { isFeedBook } from '@/services/rss/feedBookUrl';
 import { saveSysSettings } from '@/helpers/settings';
 import BookCover from '@/components/BookCover';
 import BookCoverViewer, { useBookCoverViewer } from '@/components/BookCoverViewer';
@@ -43,19 +41,13 @@ interface BookDetailViewProps {
   book: Book;
   metadata: BookMetadata | null;
   fileSize: number | null;
-  shareEnabled?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
   onDeleteCloudBackup?: () => void;
   onDeleteLocalCopy?: () => void;
   onDownload?: () => void;
   onUpload?: () => void;
-  onShare?: () => void;
   onExport?: () => void;
-  /** Download an Audiobookshelf book for offline use (#6256). */
-  onDownloadOffline?: () => void;
-  /** Set when the offline download needs an upgrade; shown as a badge. */
-  offlinePremiumLabel?: string;
   onMetadataValueClick?: (type: 'tag' | 'subject', value: string) => void;
 }
 
@@ -63,17 +55,13 @@ const BookDetailView: React.FC<BookDetailViewProps> = ({
   book,
   metadata,
   fileSize,
-  shareEnabled,
   onEdit,
   onDelete,
   onDeleteCloudBackup,
   onDeleteLocalCopy,
   onDownload,
   onUpload,
-  onShare,
   onExport,
-  onDownloadOffline,
-  offlinePremiumLabel,
   onMetadataValueClick,
 }) => {
   const _ = useTranslation();
@@ -103,8 +91,8 @@ const BookDetailView: React.FC<BookDetailViewProps> = ({
     );
   };
 
-  // Export and Share both read the book file off disk; `fileSize` is only
-  // non-null when getBookFileSize could actually open the local copy.
+  // Export reads the book file off disk; `fileSize` is only non-null when
+  // getBookFileSize could actually open the local copy.
   const hasLocalFile = fileSize !== null;
 
   const toggleSeriesCollapse = () => {
@@ -159,23 +147,9 @@ const BookDetailView: React.FC<BookDetailViewProps> = ({
                 <MdOutlineCloudDownload className='fill-base-content' />
               </button>
             )}
-            {/* A feed book is fileless — there is nothing to push (#5307). */}
-            {book.downloadedAt && !isFeedBook(book) && onUpload && (
+            {book.downloadedAt && onUpload && (
               <button onClick={onUpload} title={_('Upload to Cloud')}>
                 <MdOutlineCloudUpload className='fill-base-content' />
-              </button>
-            )}
-            {onDownloadOffline && !book.absDownloadedAt && (
-              <button
-                onClick={onDownloadOffline}
-                title={_('Download for Offline')}
-                aria-label={_('Download for Offline')}
-                className='flex items-center gap-1'
-              >
-                <MdOutlineDownloadForOffline className='fill-base-content' />
-                {offlinePremiumLabel && (
-                  <span className='badge badge-sm badge-ghost'>{offlinePremiumLabel}</span>
-                )}
               </button>
             )}
             {onDelete && (
@@ -214,7 +188,7 @@ const BookDetailView: React.FC<BookDetailViewProps> = ({
                     transient
                     label={_('Remove from Device Only')}
                     onClick={onDeleteLocalCopy}
-                    disabled={!book.downloadedAt && !book.absDownloadedAt}
+                    disabled={!book.downloadedAt}
                   />
                 </div>
               </Dropdown>
@@ -239,20 +213,6 @@ const BookDetailView: React.FC<BookDetailViewProps> = ({
                     openExternalUrl(getGoodreadsSearchUrl(getBookGoodreadsQuery(book)))
                   }
                 />
-                {onShare && (
-                  <MenuItem
-                    noIcon
-                    transient
-                    label={_('Share Book')}
-                    disabled={!shareEnabled}
-                    tooltip={
-                      shareEnabled
-                        ? undefined
-                        : _('Sign in and make the book available to share it')
-                    }
-                    onClick={onShare}
-                  />
-                )}
                 {onExport && (
                   <MenuItem
                     noIcon

@@ -95,7 +95,6 @@ describe('KOSyncClient – filename checksums', () => {
         title: 'Embedded title',
         author: 'Author',
         language: 'en',
-        absFileHash: 'abs-content-hash',
       },
     };
     expect(client.getDocumentDigest(book)).toBe('c15ad0fcc7d0a60ecf61bcd69116c3c0');
@@ -105,7 +104,7 @@ describe('KOSyncClient – filename checksums', () => {
     expect(client.getDocumentDigest({ ...book, title: '阅读 Café 100%20', format: 'PDF' })).toBe(
       'eff390be0b42c506d89e5a2ef5b79c36',
     );
-    expect(new KOSyncClient(makeConfig()).getDocumentDigest(book)).toBe('abs-content-hash');
+    expect(new KOSyncClient(makeConfig()).getDocumentDigest(book)).toBe(book.hash);
   });
 
   it.each([
@@ -476,35 +475,6 @@ describe('KOSyncClient.updateProgress – document metadata', () => {
     expect(metadata['filename']).toBe('original_import_name.epub');
     // The title stays the one the user sees.
     expect(metadata['title']).toBe('A Title the Reader Edited');
-  });
-});
-
-describe('KOSyncClient – Audiobookshelf ebooks', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  // The book's hash is the md5 of its abs:// path; KOReader keys the same
-  // EPUB by the partial MD5 of its file (#7088).
-  it("pulls and pushes under the file's own id", async () => {
-    const fileHash = '0123456789abcdef0123456789abcdef';
-    const mock = setFetch(() => jsonResponse(200, {}));
-    const book = {
-      ...makeBook(),
-      format: 'ABS',
-      metadata: { absMediaType: 'ebook', absFileHash: fileHash },
-    } as unknown as Book;
-    const client = new KOSyncClient(makeConfig({ userkey: 'key' }));
-
-    await client.getProgress(book);
-    await client.updateProgress(book, '/body/DocFragment[12]', 0.14);
-
-    const [[getUrl], [, putInit]] = mock.mock.calls as [
-      [string, RequestInit],
-      [string, RequestInit],
-    ];
-    expect(getUrl).toBe(`http://192.168.1.50/syncs/progress/${fileHash}`);
-    expect(JSON.parse(putInit.body as string)['document']).toBe(fileHash);
   });
 });
 

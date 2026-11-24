@@ -12,17 +12,12 @@ import {
 import { Insets } from '@/types/misc';
 import { EnvConfigType } from '@/services/environment';
 import { FoliateView } from '@/types/view';
-import { isAbsEbook } from '@/utils/audiobook';
-import { partialMD5 } from '@/utils/md5';
 import { DocumentLoader, TOCItem } from '@/libs/document';
 import {
   isPseStreamFileName,
   openPseStreamBook,
   parsePseStreamFileName,
 } from '@/services/opds/pseStream';
-import type { FileSystem } from '@/types/system';
-import { isFeedBookUrl, parseFeedBookUrl } from '@/services/rss/feedBookUrl';
-import { openFeedBookDoc } from '@/services/rss/feedReader';
 import { computeBookNav, hydrateBookNav, isBookNavCacheCurrent, updateToc } from '@/services/nav';
 import {
   formatTitle,
@@ -159,14 +154,6 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       delete viewStates[key];
       return { viewStates };
     });
-    // A streamed ABS ebook reads through a RemoteFile that authenticates with
-    // a short-lived access token, so its cached BookDoc must not outlive the
-    // last open view: the next open resolves the stream afresh against the
-    // store's current token. Local books keep their cache for instant reopens.
-    const id = key.split('-')[0]!;
-    if (Object.keys(get().viewStates).some((k) => k.split('-')[0] === id)) return;
-    const book = useLibraryStore.getState().getBookByHash(id);
-    if (book && isAbsEbook(book)) useBookDataStore.getState().clearBookData(id);
   },
   getViewState: (key: string) => get().viewStates[key] || null,
   // Closed books keep their keys but drop their view states; failed ones load again.
@@ -221,7 +208,6 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
         throw new Error('Book not found');
       }
       const isPseStream = !!book.url && isPseStreamFileName(book.url);
-      const isFeed = !!book.url && isFeedBookUrl(book.url);
       let bookDoc = bookData?.bookDoc;
       let docFormat = bookData?.docFormat;
       let file: File | null = bookData?.file ?? null;
@@ -245,18 +231,12 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
         known: config.widePages,
         onFound: (ids) => useBookDataStore.getState().setConfig(id, { widePages: ids }),
       });
-      if (!bookDoc || (!isPseStream && !isFeed && !file) || reload) {
+      if (!bookDoc || (!isPseStream && !file) || reload) {
         console.log('Loading book', key);
         if (isPseStream) {
           const data = parsePseStreamFileName(book.url!);
           const doc = await openPseStreamBook(data, makeWidePages(await configPromise));
           bookDoc = doc.book;
-          file = null;
-        } else if (isFeed) {
-          const { feedUrl } = parseFeedBookUrl(book.url!);
-          // AppService publicly exposes the readFile/writeFile/exists surface of FileSystem.
-          const fs = appService as unknown as FileSystem;
-          bookDoc = await openFeedBookDoc(fs, book.hash, feedUrl, book.title);
           file = null;
         } else {
           // resolveNativeBookFilePath only reads `book` (it feeds the Rust
@@ -279,20 +259,6 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
           docFormat = doc.format;
           if (doc.format === 'CBZ') config.widePages = getWidePages(bookDoc.sections);
         }
-      }
-      // KOReader keys a book by its file's partial MD5, but an Audiobookshelf
-      // ebook's hash comes from its abs:// path: keep the file's own id with
-      // the book for KOReader Sync (#7088). Hashed on every open, since the
-      // server can replace an item's file, and waited for only briefly: a
-      // stalled range read must not keep the book from opening.
-      if (file && isAbsEbook(book)) {
-        const hashing = partialMD5(file).then(
-          (hash) => {
-            book.metadata!.absFileHash = hash;
-          },
-          (err) => console.warn('Failed to hash the Audiobookshelf ebook', err),
-        );
-        await Promise.race([hashing, new Promise((resolve) => setTimeout(resolve, 5000))]);
       }
       const config = await configPromise;
       // Import annotations from third-party readers on first open. The
@@ -317,20 +283,17 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       // Filter out invalid booknotes
       config.booknotes = config.booknotes?.filter((booknote) => booknote.cfi) ?? [];
       // Load cached book navigation (TOC + section fragments) or compute and persist.
-      // Feed manifests grow between opens, so feed books always recompute instead.
       if (book.format === 'EPUB' && bookDoc.rendition?.layout !== 'pre-paginated') {
-        const cachedNav = isFeed ? null : await appService.loadBookNav(book);
+        const cachedNav = await appService.loadBookNav(book);
         if (isBookNavCacheCurrent(cachedNav) && process.env.NODE_ENV === 'production') {
           hydrateBookNav(bookDoc, cachedNav);
         } else {
           const freshNav = await computeBookNav(bookDoc);
           hydrateBookNav(bookDoc, freshNav);
-          if (!isFeed) {
-            try {
-              await appService.saveBookNav(book, freshNav);
-            } catch (e) {
-              console.warn('Failed to persist book nav cache:', e);
-            }
+          try {
+            await appService.saveBookNav(book, freshNav);
+          } catch (e) {
+            console.warn('Failed to persist book nav cache:', e);
           }
         }
       }

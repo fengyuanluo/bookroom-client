@@ -18,6 +18,7 @@ interface UnwrappedOpdsFields {
   allowSelfSignedCert?: boolean;
   addedAt?: number;
   sortOrder?: number;
+  progressSync?: OPDSCatalog['progressSync'];
   username?: string;
   password?: string;
 }
@@ -33,6 +34,7 @@ const unwrapOpdsFields = (fields: FieldsObject): UnwrappedOpdsFields => {
   const allowSelfSignedCert = unwrap(fields['allowSelfSignedCert']);
   const addedAt = unwrap(fields['addedAt']);
   const sortOrder = unwrap(fields['sortOrder']);
+  const progressSync = unwrap(fields['progressSync']);
   // Crypto middleware decrypted these in place before unpackRow ran
   // (see replicaCryptoMiddleware.decryptRowFields). A missing entry
   // means either the publishing device hadn't unlocked yet or the
@@ -54,10 +56,14 @@ const unwrapOpdsFields = (fields: FieldsObject): UnwrappedOpdsFields => {
     allowSelfSignedCert: typeof allowSelfSignedCert === 'boolean' ? allowSelfSignedCert : undefined,
     addedAt: typeof addedAt === 'number' ? addedAt : undefined,
     sortOrder: typeof sortOrder === 'number' ? sortOrder : undefined,
+    progressSync: isProgressSync(progressSync) ? progressSync : undefined,
     username: typeof username === 'string' ? username : undefined,
     password: typeof password === 'string' ? password : undefined,
   };
 };
+
+const isProgressSync = (value: unknown): value is OPDSCatalog['progressSync'] =>
+  value === 'kosync' || value === 'grimmory' || value === 'bookorbit';
 
 /**
  * Stable cross-device identity for an OPDS catalog. Two devices that import
@@ -88,6 +94,7 @@ export const opdsCatalogAdapter: ReplicaAdapter<OPDSCatalog> = {
     if (catalog.allowSelfSignedCert !== undefined)
       fields['allowSelfSignedCert'] = catalog.allowSelfSignedCert;
     if (catalog.sortOrder !== undefined) fields['sortOrder'] = catalog.sortOrder;
+    if (catalog.progressSync !== undefined) fields['progressSync'] = catalog.progressSync;
     // Pass credentials as plaintext here — the publish-side crypto
     // middleware (replicaCryptoMiddleware.encryptPackedFields) wraps
     // them in cipher envelopes before they hit fields_jsonb. If the
@@ -117,6 +124,7 @@ export const opdsCatalogAdapter: ReplicaAdapter<OPDSCatalog> = {
           : undefined,
       addedAt: fields['addedAt'] !== undefined ? Number(fields['addedAt']) : undefined,
       sortOrder: fields['sortOrder'] !== undefined ? Number(fields['sortOrder']) : undefined,
+      progressSync: isProgressSync(fields['progressSync']) ? fields['progressSync'] : undefined,
       username: fields['username'] !== undefined ? String(fields['username']) : undefined,
       password: fields['password'] !== undefined ? String(fields['password']) : undefined,
     };
@@ -145,6 +153,7 @@ export const opdsCatalogAdapter: ReplicaAdapter<OPDSCatalog> = {
       catalog.allowSelfSignedCert = fields.allowSelfSignedCert;
     if (fields.addedAt !== undefined) catalog.addedAt = fields.addedAt;
     if (fields.sortOrder !== undefined) catalog.sortOrder = fields.sortOrder;
+    if (fields.progressSync !== undefined) catalog.progressSync = fields.progressSync;
     if (fields.username !== undefined) catalog.username = fields.username;
     if (fields.password !== undefined) catalog.password = fields.password;
     if (row.reincarnation) catalog.reincarnation = row.reincarnation;

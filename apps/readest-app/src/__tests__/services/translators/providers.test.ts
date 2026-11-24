@@ -23,28 +23,11 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }));
 
-// Stub Supabase so importing the full providers registry (which pulls in
-// deepl.ts → @/utils/access → @/utils/supabase) doesn't instantiate a real
-// GoTrueClient on every `vi.resetModules()` round. Without this, each test
-// that dynamically imports the registry logs a "Multiple GoTrueClient
-// instances" warning from the real Supabase client.
-vi.mock('@/utils/supabase', () => ({
-  supabase: {
-    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null } }) },
-    from: vi.fn(),
-  },
-}));
-
 vi.mock('@/utils/simplecc', () => ({
   initSimpleCC: vi.fn(async () => {}),
   // Stand-in for the real OpenCC conversion; the assertions only need to see
   // that the Simplified reply was routed through it with the right variant.
   runSimpleCC: vi.fn((text: string) => text.replace(/只/g, '隻').replace(/过/g, '過')),
-}));
-
-vi.mock('@/utils/access', () => ({
-  getSubscriptionPlan: vi.fn(() => 'free'),
-  getTranslationQuota: vi.fn(() => 1000),
 }));
 
 const mockFetch = vi.fn();
@@ -372,43 +355,6 @@ describe('yandexProvider', () => {
     expect(opts?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('routes requests through the same-origin proxy in web builds', async () => {
-    vi.mocked(isTauriAppPlatform).mockReturnValue(false);
-    mockFetch.mockImplementation(async (url: string, init?: { body?: string }) => {
-      if (String(url).includes('endpoint=session')) {
-        return sessionResponse();
-      }
-      const text = new URLSearchParams(init?.body ?? '').get('text') ?? '';
-      return { ok: true, json: async () => ({ code: 200, lang: 'en-fr', text: [`<${text}>`] }) };
-    });
-
-    const { yandexProvider } = await import('@/services/translators/providers/yandex');
-    const result = await yandexProvider.translate(['Hello'], 'en', 'fr', 'readest-access-token');
-    expect(result).toEqual(['<Hello>']);
-
-    for (const [, init] of mockFetch.mock.calls) {
-      expect(init.headers['Authorization']).toBe('Bearer readest-access-token');
-    }
-    const urls = mockFetch.mock.calls.map(([url]) => String(url));
-    expect(urls[0]).toContain('/api/yandex-translate?endpoint=session');
-    expect(urls[1]).toContain('/api/yandex-translate?endpoint=translate');
-    expect(urls[1]).toContain('source_lang=en');
-    expect(urls[1]).toContain('target_lang=fr');
-    // the browser must not try to set the Referer — the proxy attaches it
-    expect(mockTauriFetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects web requests without a Readest token before fetching', async () => {
-    vi.mocked(isTauriAppPlatform).mockReturnValue(false);
-
-    const { yandexProvider } = await import('@/services/translators/providers/yandex');
-    await expect(yandexProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(
-      'yandex translate requires authentication in web builds',
-    );
-    expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockTauriFetch).not.toHaveBeenCalled();
-  });
-
   it('omits source_lang for automatic detection when source language is AUTO', async () => {
     mockYandexFlow(() => ({ code: 200, lang: 'en-fr', text: ['Bonjour'] }));
 
@@ -486,24 +432,6 @@ describe('yandexProvider', () => {
     expect(translateCalls()).toHaveLength(2);
   });
 
-  it('does not retry a proxy 403 without a Yandex session error code', async () => {
-    vi.mocked(isTauriAppPlatform).mockReturnValue(false);
-    mockFetch.mockImplementation(async (url: string) => {
-      if (String(url).includes('endpoint=session')) return sessionResponse();
-      return {
-        ok: false,
-        status: 403,
-        json: async () => ({ error: 'Forbidden' }),
-      };
-    });
-
-    const { yandexProvider } = await import('@/services/translators/providers/yandex');
-    await expect(
-      yandexProvider.translate(['Hello'], 'en', 'fr', 'readest-access-token'),
-    ).rejects.toThrow('yandex translate failed with status 403: Forbidden');
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-  });
-
   it('throws on non-session translate errors without dropping the session', async () => {
     mockTauriFetch.mockImplementation(async (url) => {
       if (String(url).includes('/sessions')) return sessionResponse() as unknown as Response;
@@ -564,7 +492,6 @@ describe('yandexProvider', () => {
     const { yandexProvider } = await import('@/services/translators/providers/yandex');
     expect(yandexProvider.name).toBe('yandex');
     expect(yandexProvider.label).toBe('Yandex Translate');
-    expect(yandexProvider.authRequired).toBe(false);
   });
 
   it('translates multiple texts in parallel', async () => {
@@ -850,7 +777,7 @@ describe('yandexProvider', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Azure Translator Provider
+// Azure Translator auth-param parsing
 // ---------------------------------------------------------------------------
 describe('parseBingAuthParams', () => {
   it('extracts the auth material from the translator page', async () => {
@@ -880,83 +807,6 @@ describe('parseBingAuthParams', () => {
 });
 
 // ---------------------------------------------------------------------------
-// DeepL Provider
-// ---------------------------------------------------------------------------
-describe('deeplProvider', () => {
-  beforeEach(() => {
-    mockFetch.mockReset();
-    vi.mocked(isTauriAppPlatform).mockReturnValue(false);
-    vi.resetModules();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  const ok = (text: string) => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ translations: [{ text }] }),
-  });
-
-  const sentBody = () => JSON.parse(String(mockFetch.mock.calls[0]![1].body));
-
-  it('sends the script subtag in canonical case, not upper-cased', async () => {
-    // The service 500s on `ZH-HANT` and on `ZH-TW`, but answers 200 with real
-    // Traditional Chinese for `ZH-Hant` — verified against the live endpoint.
-    // `normalizeToShortLang` already yields the canonical `zh-Hant`, so only the
-    // primary subtag may be upper-cased; upper-casing the whole code is what
-    // turned every zh-TW/zh-HK/zh-MO translation into a hard failure.
-    mockFetch.mockResolvedValue(ok('那隻敏捷的棕色狐狸。'));
-
-    const { deeplProvider } = await import('@/services/translators/providers/deepl');
-    await deeplProvider.translate(['The quick brown fox.'], 'en', 'zh-TW', 'user-token');
-
-    expect(sentBody().target_lang).toBe('ZH-Hant');
-  });
-
-  it('keeps the simplified target working', async () => {
-    mockFetch.mockResolvedValue(ok('那只敏捷的棕色狐狸。'));
-
-    const { deeplProvider } = await import('@/services/translators/providers/deepl');
-    await deeplProvider.translate(['The quick brown fox.'], 'en', 'zh-CN', 'user-token');
-
-    expect(sentBody().target_lang).toBe('ZH-Hans');
-  });
-
-  it('applies the same casing to a Chinese source language', async () => {
-    // `source_lang: ZH-HANT` 500s just like the target does.
-    mockFetch.mockResolvedValue(ok('The quick brown fox.'));
-
-    const { deeplProvider } = await import('@/services/translators/providers/deepl');
-    await deeplProvider.translate(['那隻敏捷的棕色狐狸。'], 'zh-TW', 'en', 'user-token');
-
-    expect(sentBody().source_lang).toBe('ZH-Hant');
-    expect(sentBody().target_lang).toBe('EN');
-  });
-
-  it('still upper-cases languages that have no script subtag', async () => {
-    mockFetch.mockResolvedValue(ok('Der schnelle braune Fuchs.'));
-
-    const { deeplProvider } = await import('@/services/translators/providers/deepl');
-    await deeplProvider.translate(['The quick brown fox.'], 'en', 'de', 'user-token');
-
-    const body = sentBody();
-    expect(body.source_lang).toBe('EN');
-    expect(body.target_lang).toBe('DE');
-  });
-
-  it('omits source_lang when the source is AUTO', async () => {
-    mockFetch.mockResolvedValue(ok('那只敏捷的棕色狐狸。'));
-
-    const { deeplProvider } = await import('@/services/translators/providers/deepl');
-    await deeplProvider.translate(['The quick brown fox.'], 'AUTO', 'zh-CN', 'user-token');
-
-    expect(sentBody()).not.toHaveProperty('source_lang');
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Azure Translator Provider (backed by the Bing Translator web API)
 // ---------------------------------------------------------------------------
 const BING_PAGE = `
@@ -970,9 +820,9 @@ describe('azureProvider', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     vi.mocked(tauriFetch).mockReset();
-    // The yandex suite above flips the platform mock to Tauri; azure uses
-    // window.fetch off Tauri, so restore the default for these tests
-    vi.mocked(isTauriAppPlatform).mockReturnValue(false);
+    // Bing sends no CORS headers, so the provider is app-only: every request
+    // goes out through the native HTTP plugin.
+    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
     // Suppress expected error noise from auth failure tests.
     vi.spyOn(console, 'error').mockImplementation(() => {});
     // Reset the module-level auth cache between tests by re-importing
@@ -988,85 +838,63 @@ describe('azureProvider', () => {
     status: 200,
     json: async () => [{ translations: [{ text }] }],
   });
+  const authPage = () =>
+    ({
+      ok: true,
+      status: 200,
+      url: 'https://www.bing.com/translator',
+      text: async () => BING_PAGE,
+    }) as unknown as Response;
 
-  /** Web path: proxy returns parsed auth params as JSON, then a translation. */
-  function mockProxyAuthAndTranslation(text: string) {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          ig: 'IG1',
-          iid: 'translator.5025',
-          key: '1786092445798',
-          token: 'proxy-token',
-          expiresAt: Date.now() + 3_600_000,
-        }),
-      })
-      .mockResolvedValueOnce(translationBody(text));
+  /** First the translator page (auth material), then one translation. */
+  function mockBingFlow(text: string) {
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(authPage())
+      .mockResolvedValueOnce(translationBody(text) as unknown as Response);
   }
 
   it('returns empty array for empty input', async () => {
     const { azureProvider } = await import('@/services/translators/providers/azure');
     const result = await azureProvider.translate([], 'en', 'fr');
     expect(result).toEqual([]);
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(tauriFetch).not.toHaveBeenCalled();
   });
 
-  it('translates text through the same-origin proxy in web builds', async () => {
-    mockProxyAuthAndTranslation('Bonjour');
+  it('translates by scraping bing directly from the app', async () => {
+    mockBingFlow('Bonjour');
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    const result = await azureProvider.translate(['Hello'], 'en', 'fr', 'user-token');
+    const result = await azureProvider.translate(['Hello'], 'en', 'fr');
     expect(result).toEqual(['Bonjour']);
 
-    const urls = mockFetch.mock.calls.map((call) => String(call[0]));
-    expect(urls[0]).toContain('/api/azure-translate?endpoint=auth');
-    expect(urls[1]).toContain('/api/azure-translate?endpoint=translate');
-    // The browser must never be asked to fetch bing.com directly — it has no
-    // CORS headers, so such a request would be blocked.
-    expect(urls.some((url) => url.includes('bing.com'))).toBe(false);
-  });
-
-  it('requires authentication only in web builds', async () => {
-    const { azureProvider } = await import('@/services/translators/providers/azure');
-    expect(azureProvider.authRequired).toBe(true);
-
-    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
-    expect(azureProvider.authRequired).toBe(false);
+    const urls = vi.mocked(tauriFetch).mock.calls.map((call) => String(call[0]));
+    expect(urls[0]).toBe('https://www.bing.com/translator');
+    expect(urls[1]).toContain('https://www.bing.com/ttranslatev3');
+    // IG/IID are mandatory — the endpoint answers statusCode 400 without them.
+    expect(urls[1]).toContain('IG=01CE353230DE4BFD8A44466FDD91401A');
+    expect(urls[1]).toContain('IID=translator.5025');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('splits texts over the 1000 character limit and rejoins them', async () => {
     // Bing answers `statusCode: 400` above 1000 characters, so a long
     // paragraph must go out in chunks rather than fail outright.
     const sentTexts: string[] = [];
-    mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
-      if (String(url).includes('endpoint=auth')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            ig: 'IG1',
-            iid: 'translator.5025',
-            key: '1',
-            token: 't',
-            expiresAt: Date.now() + 3_600_000,
-          }),
-        };
-      }
-      const text = new URLSearchParams(init.body as string).get('text')!;
+    vi.mocked(tauriFetch).mockImplementation(async (url, init) => {
+      if (String(url).includes('/translator')) return authPage();
+      const text = new URLSearchParams(String(init?.body ?? '')).get('text')!;
       sentTexts.push(text);
       return {
         ok: true,
         status: 200,
         json: async () => [{ translations: [{ text: `<${text}>` }] }],
-      };
+      } as unknown as Response;
     });
 
     const sentence = 'The quick brown fox jumps over the lazy dog. ';
     const long = sentence.repeat(60); // ~2640 chars
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    const [result] = await azureProvider.translate([long], 'en', 'fr', 'user-token');
+    const [result] = await azureProvider.translate([long], 'en', 'fr');
 
     expect(sentTexts.length).toBeGreaterThan(1);
     expect(sentTexts.every((text) => text.length <= 1000)).toBe(true);
@@ -1075,59 +903,13 @@ describe('azureProvider', () => {
     expect(result).toBe(sentTexts.map((text) => `<${text}>`).join(''));
   });
 
-  it('never exceeds the concurrency the proxy allows', async () => {
+  it('never exceeds the concurrency cap of ten', async () => {
     // Bing translates one text per request, so an unbounded fan-out over a
-    // page of paragraphs gets the surplus rejected with 429 by the proxy.
+    // page of paragraphs would hammer the endpoint.
     let inFlight = 0;
     let peakInFlight = 0;
-    mockFetch.mockImplementation(async (url: string) => {
-      inFlight++;
-      peakInFlight = Math.max(peakInFlight, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      inFlight--;
-      return String(url).includes('endpoint=auth')
-        ? {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              ig: 'IG1',
-              iid: 'translator.5025',
-              key: '1',
-              token: 't',
-              expiresAt: Date.now() + 3_600_000,
-            }),
-          }
-        : translationBody('translated');
-    });
-
-    const { azureProvider } = await import('@/services/translators/providers/azure');
-    const lines = Array.from({ length: 24 }, (_, index) => `line ${index}`);
-    const result = await azureProvider.translate(lines, 'en', 'fr', 'user-token');
-
-    expect(result).toHaveLength(24);
-    expect(result.every((line) => line === 'translated')).toBe(true);
-    expect(peakInFlight).toBeLessThanOrEqual(3);
-    // All 24 lines still go out — the cap throttles, it must not drop work.
-    const translateCalls = mockFetch.mock.calls.filter((call) =>
-      String(call[0]).includes('endpoint=translate'),
-    );
-    expect(translateCalls).toHaveLength(24);
-  });
-
-  it('fans out wider than the proxy cap on Tauri, where no proxy is in the path', async () => {
-    // The cap of 3 exists to stay inside the web proxy's per-user budget. On
-    // Tauri the requests go straight to bing.com with no proxy in between, and
-    // bing itself does not rate-limit this fan-out (verified against the live
-    // endpoint: 12 concurrent translate calls all answered 200). Holding the
-    // native path at 3 just serialises a page of paragraphs behind an endpoint
-    // that takes seconds per request.
-    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
-    let inFlight = 0;
-    let peakInFlight = 0;
-    vi.mocked(tauriFetch).mockImplementation(async (url: string | Request | URL) => {
-      if (String(url).includes('/translator')) {
-        return { ok: true, status: 200, text: async () => BING_PAGE } as Response;
-      }
+    vi.mocked(tauriFetch).mockImplementation(async (url) => {
+      if (String(url).includes('/translator')) return authPage();
       inFlight++;
       peakInFlight = Math.max(peakInFlight, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -1143,26 +925,15 @@ describe('azureProvider', () => {
     expect(result.every((line) => line === 'translated')).toBe(true);
     expect(peakInFlight).toBeGreaterThan(3);
     expect(peakInFlight).toBeLessThanOrEqual(10);
-    // Throttling must still not drop work.
+    // All 24 lines still go out — the cap throttles, it must not drop work.
     const translateCalls = vi
       .mocked(tauriFetch)
       .mock.calls.filter((call) => String(call[0]).includes('ttranslatev3'));
     expect(translateCalls).toHaveLength(24);
   });
 
-  it('rejects in web builds when there is no user token', async () => {
-    const { azureProvider } = await import('@/services/translators/providers/azure');
-    await expect(azureProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(
-      'azure translate requires authentication in web builds',
-    );
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('scrapes bing directly on Tauri, bypassing the proxy', async () => {
-    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
-    vi.mocked(tauriFetch)
-      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => BING_PAGE } as Response)
-      .mockResolvedValueOnce(translationBody('Bonjour') as unknown as Response);
+  it('scrapes bing directly on Tauri, bypassing any proxy', async () => {
+    mockBingFlow('Bonjour');
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
     const result = await azureProvider.translate(['Hello'], 'en', 'fr');
@@ -1171,9 +942,6 @@ describe('azureProvider', () => {
     const urls = vi.mocked(tauriFetch).mock.calls.map((call) => String(call[0]));
     expect(urls[0]).toBe('https://www.bing.com/translator');
     expect(urls[1]).toContain('https://www.bing.com/ttranslatev3');
-    // IG/IID are mandatory — the endpoint answers statusCode 400 without them.
-    expect(urls[1]).toContain('IG=01CE353230DE4BFD8A44466FDD91401A');
-    expect(urls[1]).toContain('IID=translator.5025');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -1183,7 +951,6 @@ describe('azureProvider', () => {
     // follows the page redirect, but a followed POST redirect turns into a
     // bodiless GET that comes back empty, so the translate call has to go to
     // the host the page actually came from.
-    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
     vi.mocked(tauriFetch)
       .mockResolvedValueOnce({
         ok: true,
@@ -1206,9 +973,8 @@ describe('azureProvider', () => {
     // The empty reply of a followed POST redirect (or any HTML interstitial)
     // used to be treated as "no translation" and the source text was echoed
     // back as if it had been translated.
-    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
     vi.mocked(tauriFetch)
-      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => BING_PAGE } as Response)
+      .mockResolvedValueOnce(authPage())
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -1229,12 +995,9 @@ describe('azureProvider', () => {
     // its own list — bare subtags plus script variants like zh-Hans. The
     // retired api-edge endpoint tolerated full culture codes, so the
     // migration must not keep maximizing.
-    vi.mocked(isTauriAppPlatform).mockReturnValue(true);
     const sentBodies: URLSearchParams[] = [];
     vi.mocked(tauriFetch).mockImplementation(async (url, init) => {
-      if (String(url).includes('/translator')) {
-        return { ok: true, status: 200, text: async () => BING_PAGE } as Response;
-      }
+      if (String(url).includes('/translator')) return authPage();
       sentBodies.push(new URLSearchParams(String(init?.body ?? '')));
       return translationBody('translated') as unknown as Response;
     });
@@ -1251,145 +1014,106 @@ describe('azureProvider', () => {
   });
 
   it('reuses cached auth params across calls', async () => {
-    mockProxyAuthAndTranslation('Bonjour');
-    mockFetch.mockResolvedValueOnce(translationBody('Monde'));
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(authPage())
+      .mockResolvedValueOnce(translationBody('Bonjour') as unknown as Response)
+      .mockResolvedValueOnce(translationBody('Monde') as unknown as Response);
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    await azureProvider.translate(['Hello'], 'en', 'fr', 'user-token');
-    await azureProvider.translate(['World'], 'en', 'fr', 'user-token');
+    await azureProvider.translate(['Hello'], 'en', 'fr');
+    await azureProvider.translate(['World'], 'en', 'fr');
 
-    const authCalls = mockFetch.mock.calls.filter((call) =>
-      String(call[0]).includes('endpoint=auth'),
-    );
+    const authCalls = vi
+      .mocked(tauriFetch)
+      .mock.calls.filter((call) => String(call[0]).includes('/translator'));
     expect(authCalls).toHaveLength(1);
   });
 
   it('re-authenticates once when the token is rejected with statusCode 205', async () => {
     // Bing signals an expired token inside an HTTP 200 body, so a plain
     // response.ok check would silently return no translation.
-    mockProxyAuthAndTranslation('unused');
-    mockFetch.mockReset();
-    mockFetch
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(authPage())
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({
-          ig: 'IG1',
-          iid: 'translator.5025',
-          key: '1',
-          token: 'stale',
-          expiresAt: Date.now() + 3_600_000,
-        }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ statusCode: 205 }) })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          ig: 'IG1',
-          iid: 'translator.5025',
-          key: '2',
-          token: 'fresh',
-          expiresAt: Date.now() + 3_600_000,
-        }),
-      })
-      .mockResolvedValueOnce(translationBody('Bonjour'));
+        json: async () => ({ statusCode: 205 }),
+      } as unknown as Response)
+      .mockResolvedValueOnce(authPage())
+      .mockResolvedValueOnce(translationBody('Bonjour') as unknown as Response);
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    const result = await azureProvider.translate(['Hello'], 'en', 'fr', 'user-token');
+    const result = await azureProvider.translate(['Hello'], 'en', 'fr');
     expect(result).toEqual(['Bonjour']);
 
-    const authCalls = mockFetch.mock.calls.filter((call) =>
-      String(call[0]).includes('endpoint=auth'),
-    );
+    const authCalls = vi
+      .mocked(tauriFetch)
+      .mock.calls.filter((call) => String(call[0]).includes('/translator'));
     expect(authCalls).toHaveLength(2);
   });
 
   it('throws rather than looping when re-authentication still fails', async () => {
-    const authResponse = {
+    const rejected = {
       ok: true,
       status: 200,
-      json: async () => ({
-        ig: 'IG1',
-        iid: 'translator.5025',
-        key: '1',
-        token: 'stale',
-        expiresAt: Date.now() + 3_600_000,
-      }),
-    };
-    const rejected = { ok: true, status: 200, json: async () => ({ statusCode: 205 }) };
-    mockFetch
-      .mockResolvedValueOnce(authResponse)
+      json: async () => ({ statusCode: 205 }),
+    } as unknown as Response;
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(authPage())
       .mockResolvedValueOnce(rejected)
-      .mockResolvedValueOnce(authResponse)
+      .mockResolvedValueOnce(authPage())
       .mockResolvedValueOnce(rejected);
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    await expect(azureProvider.translate(['Hello'], 'en', 'fr', 'user-token')).rejects.toThrow(
+    await expect(azureProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(
       'bing translate failed with status 205',
     );
   });
 
   it('preserves empty strings', async () => {
-    mockProxyAuthAndTranslation('Monde');
+    mockBingFlow('Monde');
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    const result = await azureProvider.translate(['', 'World'], 'en', 'fr', 'user-token');
+    const result = await azureProvider.translate(['', 'World'], 'en', 'fr');
     expect(result[0]).toBe('');
     expect(result[1]).toBe('Monde');
   });
 
   it('throws when the auth request fails', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({}) });
+    vi.mocked(tauriFetch).mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () => '',
+    } as Response);
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    await expect(azureProvider.translate(['Hello'], 'en', 'fr', 'user-token')).rejects.toThrow(
+    await expect(azureProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(
       'bing translate auth failed with status 403',
     );
   });
 
   it('throws when translation request fails', async () => {
-    mockProxyAuthAndTranslation('unused');
-    mockFetch.mockReset();
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          ig: 'IG1',
-          iid: 'translator.5025',
-          key: '1',
-          token: 't',
-          expiresAt: Date.now() + 3_600_000,
-        }),
-      })
-      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(authPage())
+      .mockResolvedValueOnce({ ok: false, status: 500 } as Response);
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    await expect(azureProvider.translate(['Hello'], 'en', 'fr', 'user-token')).rejects.toThrow(
+    await expect(azureProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(
       'bing translate failed with status 500',
     );
   });
 
   it('falls back to original text when response format is unexpected', async () => {
-    mockProxyAuthAndTranslation('unused');
-    mockFetch.mockReset();
-    mockFetch
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(authPage())
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({
-          ig: 'IG1',
-          iid: 'translator.5025',
-          key: '1',
-          token: 't',
-          expiresAt: Date.now() + 3_600_000,
-        }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] });
+        json: async () => [],
+      } as unknown as Response);
 
     const { azureProvider } = await import('@/services/translators/providers/azure');
-    const result = await azureProvider.translate(['Hello'], 'en', 'fr', 'user-token');
+    const result = await azureProvider.translate(['Hello'], 'en', 'fr');
     expect(result).toEqual(['Hello']);
   });
 
@@ -1415,38 +1139,29 @@ describe('provider registry availability handling', () => {
     expect(names).toContain('yandex');
   });
 
-  it('requires authentication for yandex only in web builds', async () => {
+  it('disables yandex in web builds and enables it in the app', async () => {
     const { getTranslator, isTranslatorAvailable } = await import(
       '@/services/translators/providers'
     );
     const yandex = getTranslator('yandex')!;
 
     vi.mocked(isTauriAppPlatform).mockReturnValue(false);
-    expect(isTranslatorAvailable(yandex, false, false)).toBe(false);
-    expect(isTranslatorAvailable(yandex, true, false)).toBe(true);
+    expect(isTranslatorAvailable(yandex)).toBe(false);
 
     vi.mocked(isTauriAppPlatform).mockReturnValue(true);
-    expect(isTranslatorAvailable(yandex, false, false)).toBe(true);
+    expect(isTranslatorAvailable(yandex)).toBe(true);
   });
 
   it('isTranslatorAvailable returns false for disabled providers', async () => {
     const { isTranslatorAvailable } = await import('@/services/translators/providers');
     const disabled = { name: 'x', label: 'X', disabled: true, translate: async () => [] };
-    expect(isTranslatorAvailable(disabled, true, true)).toBe(false);
-    expect(isTranslatorAvailable(disabled, false, false)).toBe(false);
+    expect(isTranslatorAvailable(disabled)).toBe(false);
   });
 
-  it('isTranslatorAvailable returns false for authRequired without token', async () => {
+  it('isTranslatorAvailable returns true for an enabled provider', async () => {
     const { isTranslatorAvailable } = await import('@/services/translators/providers');
-    const authed = { name: 'x', label: 'X', authRequired: true, translate: async () => [] };
-    expect(isTranslatorAvailable(authed, false, false)).toBe(false);
-    expect(isTranslatorAvailable(authed, true, false)).toBe(true);
-  });
-
-  it('isTranslatorAvailable returns false when quota is exceeded', async () => {
-    const { isTranslatorAvailable } = await import('@/services/translators/providers');
-    const exhausted = { name: 'x', label: 'X', quotaExceeded: true, translate: async () => [] };
-    expect(isTranslatorAvailable(exhausted, true, false)).toBe(false);
+    const enabled = { name: 'x', label: 'X', translate: async () => [] };
+    expect(isTranslatorAvailable(enabled)).toBe(true);
   });
 
   it('getTranslatorDisplayLabel returns the plain label for healthy providers', async () => {
@@ -1454,7 +1169,7 @@ describe('provider registry availability handling', () => {
       '@/services/translators/providers'
     );
     const google = getTranslator('google')!;
-    expect(getTranslatorDisplayLabel(google, true, false, (s) => s)).toBe('Google Translate');
+    expect(getTranslatorDisplayLabel(google, (s) => s)).toBe('Google Translate');
   });
 });
 

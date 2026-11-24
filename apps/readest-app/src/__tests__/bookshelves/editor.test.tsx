@@ -78,10 +78,6 @@ vi.mock('@/components/Dialog', () => ({
       </div>
     ) : null,
 }));
-vi.mock('@/store/absServerStore', () => ({
-  useABSServerStore: () => [],
-  isAbsBookOrphaned: () => false,
-}));
 
 beforeEach(() => {
   localStorage.removeItem('lastBookshelfTab');
@@ -295,7 +291,7 @@ describe('bookshelf editor', () => {
         type: 'group',
         match: 'all',
         children: [
-          { type: 'rule', field: 'audio', kind: 'boolean', operator: 'equals', value: true },
+          { type: 'rule', field: 'format', kind: 'text', operator: 'equals', value: 'PDF' },
         ],
       },
     };
@@ -315,7 +311,7 @@ describe('bookshelf editor', () => {
       library: [
         {
           ...useLibraryStore.getState().library[0]!,
-          format: 'ABS',
+          format: 'PDF',
           readingStatus: 'finished',
         },
       ],
@@ -531,8 +527,6 @@ describe('bookshelf editor', () => {
       'recent',
       'New bookshelf 2',
       'New bookshelf 1',
-      'audiobooks',
-      'podcasts',
       'default',
       'finished',
     ]);
@@ -563,8 +557,6 @@ describe('bookshelf editor', () => {
       'New bookshelf 1',
       'Reading now',
       'New bookshelf 2',
-      'audiobooks',
-      'podcasts',
       'finished',
     ]);
   });
@@ -588,8 +580,6 @@ describe('bookshelf editor', () => {
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
     expect((save.mock.calls.at(-1)![2] as BookshelfDefinition[]).map((s) => s.id)).toEqual([
       'recent',
-      'audiobooks',
-      'podcasts',
       'default',
       'finished',
     ]);

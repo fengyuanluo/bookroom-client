@@ -2,15 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   lookupInContext: vi.fn(),
-  premium: true,
 }));
 
 vi.mock('@/services/dictionaries/contextDictionary', () => ({
   lookupInContext: mocks.lookupInContext,
-}));
-vi.mock('@/utils/access', () => ({
-  getAccessToken: async () => 'token',
-  isCustomTranslatorAllowed: () => mocks.premium,
 }));
 
 import { contextProvider } from '@/services/dictionaries/providers/contextProvider';
@@ -62,19 +57,12 @@ const setTranslators = (translators: CustomTranslator[], contextTranslatorId?: s
 describe('context dictionary provider', () => {
   beforeEach(() => {
     mocks.lookupInContext.mockReset();
-    mocks.premium = true;
   });
 
   it('is unsupported without an OpenAI-compatible translator', async () => {
     setTranslators([{ ...llm('deepl'), type: 'deepl' }, llm('off', { disabled: true })]);
     expect(await lookup()).toEqual({ ok: false, reason: 'unsupported' });
     expect(mocks.lookupInContext).not.toHaveBeenCalled();
-  });
-
-  it('is unsupported without premium', async () => {
-    mocks.premium = false;
-    setTranslators([llm('a')]);
-    expect(await lookup()).toEqual({ ok: false, reason: 'unsupported' });
   });
 
   it('asks the chosen translator with the selection context and renders the entry', async () => {

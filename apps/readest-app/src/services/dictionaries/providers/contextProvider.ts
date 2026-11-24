@@ -7,7 +7,6 @@
  * premium or without such a translator.
  */
 import i18n from '@/i18n/i18n';
-import { getAccessToken, isCustomTranslatorAllowed } from '@/utils/access';
 import { getTargetLang } from '@/utils/misc';
 import { findTranslationPrompt, getLLMTranslators } from '@/store/customTranslatorStore';
 import { parseNoteMarkdown } from '@/app/reader/utils/noteMarkdown';
@@ -83,9 +82,6 @@ export const contextProvider: DictionaryProvider = {
   kind: 'builtin',
   label: 'Context Dictionary',
   async lookup(word, ctx) {
-    if (!isCustomTranslatorAllowed(await getAccessToken())) {
-      return { ok: false, reason: 'unsupported' };
-    }
     const translator = getContextTranslator();
     if (!translator) return { ok: false, reason: 'unsupported' };
     const { selection } = ctx;

@@ -1,6 +1,7 @@
 import { Book, BookConfig, BookNote, HardcoverBookLink } from '@/types/book';
 import { getContentMd5 } from '@/utils/misc';
-import { isTauriAppPlatform } from '@/services/environment';
+import { getAPIBaseUrl, isTauriAppPlatform } from '@/services/environment';
+import { bookRoomProxyHeaders } from '@/services/bookroom/proxy';
 import { TokenEndpointError, type TokenSet } from '@/services/sync/providers/oauth/tokenEndpoint';
 import { HardcoverSyncMapStore } from './HardcoverSyncMapStore';
 import { getRateLimitGate, MAX_WAIT_MS, parseRetryAfterMs, RateLimitGate } from './rateLimit';
@@ -139,7 +140,6 @@ export class HardcoverAuthError extends Error {}
 
 export class HardcoverClient {
   private directEndpoint = 'https://api.hardcover.app/v1/graphql';
-  private proxyEndpoint = '/api/hardcover/graphql';
   private token: string;
   private oauth: TokenSet | null;
   // The tokens last known to be in the store; stays behind `oauth` until a save succeeds.
@@ -216,7 +216,16 @@ export class HardcoverClient {
   }
 
   private get endpoint() {
-    return isTauriAppPlatform() ? this.directEndpoint : this.proxyEndpoint;
+    return isTauriAppPlatform() ? this.directEndpoint : `${getAPIBaseUrl()}/hardcover/graphql`;
+  }
+
+  // Through the BookRoom proxy `Authorization` carries the BookRoom token, so
+  // the Hardcover token moves to `X-Upstream-Authorization`.
+  private async requestHeaders(): Promise<Record<string, string>> {
+    const headers = { 'Content-Type': 'application/json' };
+    return isTauriAppPlatform()
+      ? { ...headers, authorization: this.token }
+      : bookRoomProxyHeaders({ ...headers, 'X-Upstream-Authorization': this.token });
   }
 
   private formatDate(date: Date): string {
@@ -274,10 +283,7 @@ export class HardcoverClient {
       await this.gate.wait();
       const res = await platformFetch(this.endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: this.token,
-        },
+        headers: await this.requestHeaders(),
         body: JSON.stringify(body),
       });
       this.gate.update(res.headers);

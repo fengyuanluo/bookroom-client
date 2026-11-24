@@ -2,7 +2,6 @@ import { describe, test, expect, beforeEach, afterEach, vi, type Mock } from 'vi
 import { useTransferStore, TransferItem } from '@/store/transferStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { SystemSettings } from '@/types/settings';
-import { setCachedUserPlan } from '@/services/sync/cloudSyncProvider';
 import { runFileBookDownload } from '@/services/sync/file/runLibrarySync';
 
 vi.mock('@/services/sync/file/runLibrarySync', () => ({
@@ -34,6 +33,7 @@ function makeBook(overrides: Partial<Book> = {}): Book {
     author: 'Author',
     createdAt: 1000,
     updatedAt: 2000,
+    remote: 'bookroom',
     ...overrides,
   };
 }
@@ -130,7 +130,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setCachedUserPlan('free');
   vi.restoreAllMocks();
 });
 
@@ -728,7 +727,6 @@ describe('TransferManager', () => {
       });
 
       test('flags the file backend when it does not hold a book and there is no cloud copy', async () => {
-        setCachedUserPlan('plus');
         useSettingsStore.setState({
           settings: {
             version: 1,
@@ -738,7 +736,7 @@ describe('TransferManager', () => {
           } as unknown as SystemSettings,
         });
         vi.mocked(runFileBookDownload).mockResolvedValue(false);
-        const book = makeBook({ hash: 'h1', title: 'Dune' });
+        const book = makeBook({ hash: 'h1', title: 'Dune', remote: 'webdav' });
         await setup(makeAppService(), book);
 
         transferManager.queueDownload(book);
@@ -815,10 +813,14 @@ describe('TransferManager', () => {
       'onedrive',
       'icloud',
     ] as const)('downloads queued books through %s without calling Readest Cloud', async (provider) => {
-      const book = makeBook({ uploadedAt: 1000 });
+      // A book belongs to exactly one remote, so its file comes from that
+      // backend (ADR 0010).
+      const book = makeBook({
+        uploadedAt: 1000,
+        remote: provider === 'googleDrive' ? 'gdrive' : provider,
+      });
       const appService = makeAppService();
       const updateBook = vi.fn();
-      setCachedUserPlan('plus');
       useSettingsStore.setState({
         settings: {
           ...useSettingsStore.getState().settings,
@@ -848,18 +850,14 @@ describe('TransferManager', () => {
       expect(useTransferStore.getState().transfers[id]?.status).toBe('completed');
     });
 
-    test.each([
-      true,
-      false,
-    ])('falls back to Readest Cloud only when enabled (%s) after a file-provider miss', async (readestEnabled) => {
-      const book = makeBook({ uploadedAt: 1000 });
+    test('a file-backend miss for a backend-owned book never falls back to BookRoom', async () => {
+      const book = makeBook({ uploadedAt: 1000, remote: 's3' });
       const appService = makeAppService();
       const updateBook = vi.fn();
-      setCachedUserPlan('plus');
       useSettingsStore.setState({
         settings: {
           version: 1,
-          readestCloud: { enabled: readestEnabled },
+          readestCloud: { enabled: true },
           s3: { enabled: true },
         } as SystemSettings,
       });
@@ -875,16 +873,13 @@ describe('TransferManager', () => {
       await vi.advanceTimersByTimeAsync(500);
 
       expect(runFileBookDownload).toHaveBeenCalled();
-      expect(appService['downloadBook']).toHaveBeenCalledTimes(readestEnabled ? 1 : 0);
-      expect(updateBook).toHaveBeenCalledTimes(readestEnabled ? 1 : 0);
-      expect(!!book.downloadedAt).toBe(readestEnabled);
+      // The book's remote is S3; Readest Cloud does not hold it.
+      expect(appService['downloadBook']).not.toHaveBeenCalled();
+      expect(updateBook).not.toHaveBeenCalled();
+      expect(book.downloadedAt).toBeFalsy();
       const transfer = useTransferStore.getState().transfers[id]!;
-      if (readestEnabled) {
-        expect(transfer.status).toBe('completed');
-      } else {
-        expect(transfer.status).not.toBe('completed');
-        expect(transfer.retryCount).toBeGreaterThan(0);
-      }
+      expect(transfer.status).not.toBe('completed');
+      expect(transfer.retryCount).toBeGreaterThan(0);
     });
 
     test('provider-owned file activity persists without occupying queue slots or being retried', async () => {
@@ -1020,7 +1015,9 @@ describe('TransferManager', () => {
         translationFn,
       );
 
-      transferManager.queueUpload(book);
+      // Uploads for a book absent from the library are policy-cancelled by
+      // the reconcile pass; a download exercises the execute path's error.
+      transferManager.queueDownload(book);
       await vi.advanceTimersByTimeAsync(10000);
 
       // After all retries exhausted, error toast should be dispatched

@@ -7,10 +7,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useSettingsStore } from '@/store/settingsStore';
 import { eventDispatcher } from '@/utils/event';
 import { transferManager } from '@/services/transferManager';
-import {
-  getActiveFileSyncBackends,
-  isReadestCloudEnabled,
-} from '@/services/sync/cloudSyncProvider';
+import { resolveBookSyncGate } from '@/services/sync/cloudSyncProvider';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
 import { runFileBookDownload, runFileBookUpload } from '@/services/sync/file/runLibrarySync';
 import { recordFlow } from '@/services/sync/dataFlow/log';
@@ -93,15 +90,12 @@ export const useBookTransferActions = (
 
   const handleBookUpload = useCallback(
     async (book: Book, _syncBooks = true) => {
-      const settingsNow = useSettingsStore.getState().settings;
-      const backends = getActiveFileSyncBackends(settingsNow);
-      const readest = isReadestCloudEnabled(settingsNow);
-      // Peers list a Readest Cloud file only through its `books` row, which is
+      // Only the remote the book belongs to takes it (ADR 0010).
+      const { backends, readest } = resolveBookSyncGate(useSettingsStore.getState().settings, book);
+      // Peers list a BookRoom file only through its `books` row, which is
       // pushed only while Books sync is on, so an upload without it is unreachable.
       const booksSyncOff = readest && !isSyncCategoryEnabled('book');
 
-      // An explicit Upload must reach EVERY destination the user selected
-      // (#5062), not just the first one.
       const pushed = backends.length > 0 ? await runFileBookUpload(envConfig, book) : false;
       // Readest Cloud uploads go through the transfer queue (resumable, with its
       // own progress panel), so it reports "queued", not "uploaded".
@@ -151,14 +145,10 @@ export const useBookTransferActions = (
   const handleBookDownload = useCallback(
     async (book: Book, downloadOptions: BookDownloadOptions = {}) => {
       const { redownload = false, queued = false, silent = false } = downloadOptions;
-      const settingsNow = useSettingsStore.getState().settings;
-      const backends = getActiveFileSyncBackends(settingsNow);
-      const readest = isReadestCloudEnabled(settingsNow);
-      // `uploadedAt` proves that some cloud copy exists, but it does not encode
-      // provenance: the file-sync engine stamps it for WebDAV/Drive/S3/etc. too.
-      // Try the enabled file mirrors first so a metadata-only shelf row is not
-      // misrouted into Readest Cloud. When none has the file, fall through to
-      // the native, resumable path if that backend is also enabled (#5009).
+      const { backends, readest } = resolveBookSyncGate(useSettingsStore.getState().settings, book);
+      // `uploadedAt` proves that a cloud copy exists, but not where: the
+      // file-sync engine stamps it too. Only the remote the book belongs to
+      // (ADR 0010) is asked for the file.
       if (backends.length > 0) {
         const tracker = trackProgress(book.hash);
         let ok = false;
@@ -178,17 +168,17 @@ export const useBookTransferActions = (
           }
           return true;
         }
+      }
 
-        if (!readest || !book.uploadedAt) {
-          if (!silent) {
-            eventDispatcher.dispatch('toast', {
-              type: 'error',
-              timeout: 2000,
-              message: _('Failed to download book: {{title}}', { title: book.title }),
-            });
-          }
-          return false;
+      if (!readest) {
+        if (!silent) {
+          eventDispatcher.dispatch('toast', {
+            type: 'error',
+            timeout: 2000,
+            message: _('Failed to download book: {{title}}', { title: book.title }),
+          });
         }
+        return false;
       }
 
       if (redownload || !queued) {

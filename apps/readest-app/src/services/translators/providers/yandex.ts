@@ -16,10 +16,8 @@ import { initSimpleCC, runSimpleCC } from '@/utils/simplecc';
  * - the API rejects texts longer than ~650 chars with 413 "The text size
  *   exceeds the maximum" (verified empirically — the FOSWLY docs claiming
  *   10k are outdated), so longer texts are split into chunks;
- * - the session endpoint validates the Referer header. In the Tauri app we
- *   send it directly; in web builds the browser cannot spoof it cross-origin,
- *   so requests go through the same-origin proxy at /api/yandex-translate,
- *   which attaches the headers server-side.
+ * - the session endpoint validates the Referer header, which a browser cannot
+ *   spoof cross-origin, so the provider is app-only (Tauri sends it directly).
  */
 const MAX_CHARS_PER_REQUEST = 600;
 const MAX_CONCURRENT_REQUESTS = 3;
@@ -29,12 +27,11 @@ const MAX_CHARS_PER_SENTENCE = 250;
 // every translate chunk potentially retrying once with the refreshed SID.
 const MAX_TRANSLATE_REQUESTS_PER_CALL = 29;
 const TRANSPORT_TIMEOUT_MS = 15_000;
-// The web proxy answers 429 once a user exceeds its per-minute budget; such chunks wait
-// for the Retry-After delay and go out again instead of failing the whole paragraph.
+// Chunks answered 429 wait for the Retry-After delay and go out again instead
+// of failing the whole paragraph.
 const MAX_RATE_LIMIT_RETRIES = 3;
 const DEFAULT_RETRY_AFTER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 60_000;
-const PROXY_URL = '/api/yandex-translate';
 
 interface YandexSession {
   id: string;
@@ -94,38 +91,13 @@ async function withRequestLimit<T>(task: () => Promise<T>, signal?: AbortSignal)
   }
 }
 
-const getRequestTarget = (endpoint: 'session' | 'translate', token?: string | null) => {
-  if (isTauriAppPlatform()) {
-    return {
-      fetchImpl: tauriFetch,
-      url: endpoint === 'session' ? YANDEX_SESSION_URL : YANDEX_TRANSLATE_URL,
-      headers: YANDEX_REQUEST_HEADERS,
-      direct: true,
-    };
-  }
-  if (!token) {
-    throw new Error('yandex translate requires authentication in web builds');
-  }
-  return {
-    fetchImpl: window.fetch.bind(window),
-    url: `${PROXY_URL}?endpoint=${endpoint}`,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Bearer ${token}`,
-    },
-    direct: false,
-  };
-};
-
 const withParams = (base: string, params: URLSearchParams) =>
   `${base}${base.includes('?') ? '&' : '?'}${params}`;
 
 async function withRequestSignal<T>(
-  direct: boolean,
   signal: AbortSignal | undefined,
   request: (signal?: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  if (!direct) return request(signal);
   signal?.throwIfAborted();
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
@@ -181,12 +153,16 @@ const baseParams = () => ({
   yum: genYandexMetrikaUID(),
 });
 
-async function createSession(token?: string | null): Promise<string> {
-  const { fetchImpl, url, headers, direct } = getRequestTarget('session', token);
+async function createSession(): Promise<string> {
   const params = new URLSearchParams(baseParams());
-  const data = await withRequestSignal(direct, undefined, async (signal) => {
+  const data = await withRequestSignal(undefined, async (signal) => {
     const response = await withRequestLimit(
-      () => fetchImpl(withParams(url, params), { method: 'POST', headers, signal }),
+      () =>
+        tauriFetch(withParams(YANDEX_SESSION_URL, params), {
+          method: 'POST',
+          headers: YANDEX_REQUEST_HEADERS,
+          signal,
+        }),
       signal,
     );
     if (!response.ok) {
@@ -214,12 +190,12 @@ async function createSession(token?: string | null): Promise<string> {
   return session.id;
 }
 
-async function getSession(token?: string | null, signal?: AbortSignal): Promise<string> {
+async function getSession(signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   if (cachedSession && cachedSession.expiresAt > Date.now()) {
     return cachedSession.id;
   }
-  sessionPromise ??= createSession(token).finally(() => {
+  sessionPromise ??= createSession().finally(() => {
     sessionPromise = null;
   });
   if (!signal) return sessionPromise;
@@ -237,13 +213,12 @@ async function translateChunk(
   text: string,
   sourceLang: string,
   targetLang: string,
-  token?: string | null,
   signal?: AbortSignal,
   retrySession = true,
   rateLimitRetries = MAX_RATE_LIMIT_RETRIES,
 ): Promise<string> {
   signal?.throwIfAborted();
-  const sid = await getSession(token, signal);
+  const sid = await getSession(signal);
   const params = new URLSearchParams({
     ...baseParams(),
     sid: `${sid}-5-0`,
@@ -260,13 +235,12 @@ async function translateChunk(
     ['text', text],
   ]);
 
-  const { fetchImpl, url, headers, direct } = getRequestTarget('translate', token);
-  const { response, data } = await withRequestSignal(direct, signal, async (transportSignal) => {
+  const { response, data } = await withRequestSignal(signal, async (transportSignal) => {
     const response = await withRequestLimit(
       () =>
-        fetchImpl(withParams(url, params), {
+        tauriFetch(withParams(YANDEX_TRANSLATE_URL, params), {
           method: 'POST',
-          headers,
+          headers: YANDEX_REQUEST_HEADERS,
           body: body.toString(),
           signal: transportSignal,
         }),
@@ -279,27 +253,17 @@ async function translateChunk(
     // The request slot and transport deadline are already released here, so waiting
     // neither blocks other chunks nor counts against the request timeout.
     await wait(retryAfterMs(response), signal);
-    return translateChunk(
-      text,
-      sourceLang,
-      targetLang,
-      token,
-      signal,
-      retrySession,
-      rateLimitRetries - 1,
-    );
+    return translateChunk(text, sourceLang, targetLang, signal, retrySession, rateLimitRetries - 1);
   }
   if (response.ok && !data) {
     throw new Error('yandex translate failed: malformed response');
   }
   const errorCode = typeof data?.code === 'number' ? data.code : null;
   if (!response.ok || errorCode !== 200 || data?.message) {
-    // Proxy transport errors use { error } without a Yandex `code`; they must
-    // not invalidate a healthy SID or trigger a futile retry.
     const sessionInvalid = errorCode === 401 || errorCode === 403;
     if (sessionInvalid && cachedSession?.id === sid) cachedSession = null;
     if (sessionInvalid && retrySession) {
-      return translateChunk(text, sourceLang, targetLang, token, signal, false, rateLimitRetries);
+      return translateChunk(text, sourceLang, targetLang, signal, false, rateLimitRetries);
     }
     throw new Error(
       `yandex translate failed with status ${response.status}: ${data?.message ?? data?.error ?? 'unknown error'}`,
@@ -314,14 +278,15 @@ async function translateChunk(
 export const yandexProvider: TranslationProvider = {
   name: 'yandex',
   label: _('Yandex Translate'),
-  get authRequired() {
+  get disabled() {
     return !isTauriAppPlatform();
   },
+  requiresApp: true,
   translate: async (
     texts: string[],
     sourceLang: string,
     targetLang: string,
-    token?: string | null,
+    _token?: string | null,
     _useCache?: boolean,
     signal?: AbortSignal,
   ): Promise<string[]> => {
@@ -359,7 +324,6 @@ export const yandexProvider: TranslationProvider = {
           job.chunk,
           source_lang,
           target_lang,
-          token,
           signal,
         );
       }

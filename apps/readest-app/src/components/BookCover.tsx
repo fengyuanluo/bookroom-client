@@ -245,14 +245,11 @@ const BookCover: React.FC<BookCoverProps> = memo<BookCoverProps>(
                 aria-hidden='true'
                 className='fallback-cover-spine eink:opacity-100 absolute inset-y-0 start-[4%] border-s border-current opacity-35'
               />
-              {mode === 'grid' &&
-                !isPreview &&
-                book.format &&
-                !['ABS', 'OPDSAUDIO', 'BOOKORBIT'].includes(book.format) && (
-                  <span className='fallback-cover-format shrink-0 font-sans text-[10px] leading-none tracking-widest'>
-                    {book.format.toUpperCase()}
-                  </span>
-                )}
+              {mode === 'grid' && !isPreview && book.format && (
+                <span className='fallback-cover-format shrink-0 font-sans text-[10px] leading-none tracking-widest'>
+                  {book.format.toUpperCase()}
+                </span>
+              )}
               <div className='flex min-h-0 flex-1 items-center justify-center py-[8%]'>
                 <span
                   dir='auto'

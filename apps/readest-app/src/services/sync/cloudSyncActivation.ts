@@ -6,15 +6,10 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { broadcastGlobalSettings } from '@/utils/settingsSync';
 
 /**
- * Write Readest Cloud's own switch, including the third state a plain boolean
- * cannot express: `undefined`, which restores the derived fallback
- * (`enabled ?? !hasAnyThirdPartyEnabled`, see `isReadestCloudEnabled`).
- *
- * Clearing rather than pinning `true` matters — a pinned `true` retires the
- * derivation, so enabling WebDAV later would leave Readest Cloud on and the
- * library would upload to both. `disabledAt` is stamped only for an explicit
+ * Write BookRoom's own switch. `undefined` restores the default (on, see
+ * `isReadestCloudEnabled`). `disabledAt` is stamped only for an explicit
  * opt-out: it anchors the mixed-fleet probe ("when did this device stop
- * writing native rows"), which a device back on the derived default never did.
+ * writing native rows"), which a device on the default never did.
  */
 export const withReadestCloudChoice = (
   settings: SystemSettings,

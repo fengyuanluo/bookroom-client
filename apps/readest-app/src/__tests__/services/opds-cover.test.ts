@@ -7,7 +7,6 @@ vi.mock('@/services/environment', () => ({
   isWebAppPlatform: vi.fn(() => false),
   isTauriAppPlatform: vi.fn(() => true),
   getAPIBaseUrl: () => '/api',
-  getNodeAPIBaseUrl: () => '/node-api',
 }));
 
 vi.mock('@/libs/storage', () => ({
@@ -18,6 +17,9 @@ vi.mock('@/app/opds/utils/opdsReq', () => ({
   probeAuth: vi.fn().mockResolvedValue(null),
   needsProxy: vi.fn(() => false),
   getProxiedURL: vi.fn((url: string) => url),
+  upstreamAuthHeader: vi.fn((useProxy: boolean) =>
+    useProxy ? 'X-Upstream-Authorization' : 'Authorization',
+  ),
 }));
 
 import { md5 } from 'js-md5';
@@ -163,7 +165,9 @@ describe('applyOPDSCover', () => {
     expect(vi.mocked(getProxiedURL).mock.calls.flat()).not.toContain('Basic dXNlcjpwYXNz');
     expect(downloadFile).toHaveBeenCalledWith(
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Basic dXNlcjpwYXNz' }),
+        headers: expect.objectContaining({
+          'X-Upstream-Authorization': 'Basic dXNlcjpwYXNz',
+        }),
       }),
     );
   });

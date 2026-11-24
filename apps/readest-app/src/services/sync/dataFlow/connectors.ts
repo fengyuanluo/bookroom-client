@@ -1,10 +1,7 @@
 import type { EnvConfigType } from '@/services/environment';
-import type { ABSServer } from '@/types/audiobookshelf';
 import type { OPDSCatalog } from '@/types/opds';
 import type { KOSyncStrategy, SystemSettings } from '@/types/settings';
-import type { UserPlan } from '@/types/quota';
-import { getAPIBaseUrl, isTauriAppPlatform } from '@/services/environment';
-import { createAbsClient } from '@/services/audiobookshelf/createClient';
+import { isTauriAppPlatform } from '@/services/environment';
 import { BookOrbitClient } from '@/services/bookorbit/BookOrbitClient';
 import { GrimmoryClient } from '@/services/grimmory/GrimmoryClient';
 import {
@@ -18,7 +15,6 @@ import { NotionClient } from '@/services/notion';
 import { checkCatalogFeed } from '@/services/opds/feedChecker';
 import { PageboundClient, type PageboundSession } from '@/services/pagebound';
 import { ReadwiseClient } from '@/services/readwise';
-import { isInboxDrainEnabled } from '@/services/send/devicePrefs';
 import { checkFileSyncBackend } from '@/services/sync/file/providerRegistry';
 import { canBackendRun } from '@/services/sync/file/runLibrarySync';
 import {
@@ -32,7 +28,6 @@ import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
 import { SyncClient } from '@/libs/sync';
 import { useLocalSendStore } from '@/store/localsendStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { fetchWithAuth } from '@/utils/fetch';
 import { stubTranslation as _ } from '@/utils/misc';
 import { recordConnectionCheck } from './log';
 import type { ConnectionCheck, ConnectorId, FlowKind } from './types';
@@ -56,9 +51,7 @@ export interface FlowConnector {
 export interface ConnectorContext {
   settings: SystemSettings;
   signedIn: boolean;
-  plan?: UserPlan;
   envConfig: EnvConfigType;
-  absServers: ABSServer[];
   opdsCatalogs: OPDSCatalog[];
 }
 
@@ -186,7 +179,7 @@ const readingConnectors = ({ settings, envConfig }: ConnectorContext): FlowConne
   return connectors;
 };
 
-const cloudConnectors = ({ settings, signedIn, plan }: ConnectorContext): FlowConnector[] => {
+const cloudConnectors = ({ settings, signedIn }: ConnectorContext): FlowConnector[] => {
   const connectors: FlowConnector[] = [];
   if (signedIn && isReadestCloudEnabled(settings)) {
     const kinds: FlowKind[] = [
@@ -207,7 +200,7 @@ const cloudConnectors = ({ settings, signedIn, plan }: ConnectorContext): FlowCo
     });
   }
   // Web Google Drive can't run once its token is gone, but it's still set up.
-  const backends = getActiveFileSyncBackends(settings, plan).filter(
+  const backends = getActiveFileSyncBackends(settings).filter(
     (kind) => kind === 'gdrive' || canBackendRun(kind),
   );
   for (const kind of backends) {
@@ -232,20 +225,6 @@ const cloudConnectors = ({ settings, signedIn, plan }: ConnectorContext): FlowCo
 
 const contentConnectors = (ctx: ConnectorContext): FlowConnector[] => {
   const connectors: FlowConnector[] = [];
-  const servers = ctx.absServers.filter((server) => !server.deletedAt && !server.disabled);
-  if (servers.length > 0) {
-    connectors.push({
-      id: 'audiobookshelf',
-      title: _('Audiobookshelf'),
-      sources: ['books', 'progress'],
-      sinks: ['progress'],
-      check: async () => {
-        const appService = await ctx.envConfig.getAppService();
-        await Promise.all(servers.map((server) => createAbsClient(appService, server).getMe()));
-        return { ok: true };
-      },
-    });
-  }
   const catalogs = ctx.opdsCatalogs.filter((catalog) => !catalog.deletedAt && !catalog.disabled);
   if (catalogs.length > 0) {
     connectors.push({
@@ -254,20 +233,6 @@ const contentConnectors = (ctx: ConnectorContext): FlowConnector[] => {
       sources: ['books'],
       sinks: [],
       check: async () => passes((await Promise.all(catalogs.map(checkCatalogFeed))).every(Boolean)),
-    });
-  }
-  if (ctx.signedIn && isInboxDrainEnabled()) {
-    connectors.push({
-      id: 'send',
-      title: _('Send to Readest'),
-      sources: ['books'],
-      sinks: [],
-      // Lists the inbox rather than calling /send/inbox/claim: a claim leases
-      // the oldest item and can't be handed back. The drainer reports real claims.
-      check: async () => {
-        await fetchWithAuth(`${getAPIBaseUrl()}/send/inbox`, { method: 'GET' });
-        return { ok: true };
-      },
     });
   }
   if (isTauriAppPlatform() && isLocalSendEnabled()) {

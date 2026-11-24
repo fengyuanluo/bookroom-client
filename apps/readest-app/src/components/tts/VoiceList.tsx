@@ -31,8 +31,6 @@ interface VoiceListProps {
   // engine matches the id in any group.
   selected: { engine?: string; voiceId: string } | null;
   onSelect: (group: TTSVoicesGroup, voice: TTSVoice) => void;
-  // A voice the reader's plan lacks: tapping it leads here instead.
-  onUpgrade: () => void;
   preview: {
     toggle: (group: TTSVoicesGroup, voice: TTSVoice) => void;
     statusOf: (group: TTSVoicesGroup, voice: TTSVoice) => VoicePreviewStatus | null;
@@ -41,13 +39,7 @@ interface VoiceListProps {
 
 // Voices by engine, one boxed list each, filterable by gender. A row's round
 // button previews the voice; the rest of the row picks it.
-const VoiceList: React.FC<VoiceListProps> = ({
-  groups,
-  selected,
-  onSelect,
-  onUpgrade,
-  preview,
-}) => {
+const VoiceList: React.FC<VoiceListProps> = ({ groups, selected, onSelect, preview }) => {
   const _ = useTranslation();
   const [gender, setGender] = useState<GenderFilter>('all');
   // A name a user's own service gave is shown as is; built-in names are UI strings.
@@ -103,10 +95,8 @@ const VoiceList: React.FC<VoiceListProps> = ({
               !!selected &&
               selected.voiceId === voice.id &&
               (!selected.engine || selected.engine === group.engine);
-            // A voice the plan lacks stays tappable: it leads to the upgrade.
-            const locked = !!voice.disabled && !!voice.tier;
             const status = preview.statusOf(group, voice);
-            const canPreview = canPreviewEngine(group.engine) && (!voice.disabled || locked);
+            const canPreview = canPreviewEngine(group.engine) && !voice.disabled;
             return (
               <div key={voice.id} className='flex min-h-14 items-center gap-3 pe-4'>
                 {canPreview && (
@@ -137,9 +127,9 @@ const VoiceList: React.FC<VoiceListProps> = ({
                 )}
                 <button
                   type='button'
-                  disabled={voice.disabled && !locked}
+                  disabled={voice.disabled}
                   aria-current={isSelected || undefined}
-                  onClick={() => (locked ? onUpgrade() : onSelect(group, voice))}
+                  onClick={() => onSelect(group, voice)}
                   className='flex min-w-0 flex-1 items-center gap-2 self-stretch py-2 text-start disabled:cursor-not-allowed'
                 >
                   <span className='flex min-w-0 flex-1 flex-col gap-0.5'>
@@ -168,11 +158,6 @@ const VoiceList: React.FC<VoiceListProps> = ({
                         .join(' · ')}
                     </span>
                   </span>
-                  {voice.tier && (
-                    <span className='badge badge-sm badge-ghost shrink-0'>
-                      {voice.tier === 'pro' ? _('Pro') : _('Plus')}
-                    </span>
-                  )}
                   <span className='flex w-5 shrink-0 justify-center'>
                     {isSelected && <MdCheck className='h-5 w-5' aria-hidden='true' />}
                   </span>

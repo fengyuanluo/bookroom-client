@@ -39,9 +39,7 @@ interface LibraryHeaderProps {
   onImportPastedText?: () => void;
   onImportBooksFromDirectory?: () => void;
   onImportFromWebBrowser?: () => void;
-  onImportBookFromNovelUrl?: () => void;
   onOpenCatalogManager: () => void;
-  onOpenFeeds: () => void;
   onToggleSelectMode: () => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
@@ -62,9 +60,7 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
   onImportPastedText,
   onImportBooksFromDirectory,
   onImportFromWebBrowser,
-  onImportBookFromNovelUrl,
   onOpenCatalogManager,
-  onOpenFeeds,
   onToggleSelectMode,
   onSelectAll,
   onDeselectAll,
@@ -303,9 +299,7 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
                     onImportPastedText={onImportPastedText}
                     onImportBooksFromDirectory={onImportBooksFromDirectory}
                     onImportFromWebBrowser={onImportFromWebBrowser}
-                    onImportBookFromNovelUrl={onImportBookFromNovelUrl}
                     onOpenCatalogManager={onOpenCatalogManager}
-                    onOpenFeeds={onOpenFeeds}
                   />
                 </Dropdown>
                 {isMobile ? null : (

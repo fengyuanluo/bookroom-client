@@ -34,17 +34,14 @@ function isBlockedV4(a: number, b: number, c: number, _d: number): boolean {
 }
 
 /**
- * Canonical SSRF host blocklist, shared by every server route that fetches a
- * client-supplied URL (`/api/opds/proxy`, `/api/kosync`, `/api/send/fetch-url`).
- * Returns true for hosts that must never be reached: loopback, private,
- * link-local, CGNAT, benchmarking, multicast, internal hostname suffixes, and
- * bare single-label names.
+ * Whether a host is loopback, private, link-local, CGNAT, benchmarking,
+ * multicast, an internal hostname suffix or a bare single-label name. BookRoom's
+ * web proxies refuse such hosts by default, so the client fetches them directly
+ * instead (see `isLanAddress`).
  *
  * Input is a hostname as the WHATWG URL parser serializes it (decimal/hex/octal
- * IPv4 already normalized to dotted-quad) or a resolved IP address. Trailing
- * dots are stripped first: `localhost.` is the same DNS name as `localhost`.
- * This is a string check — a public name whose DNS records point at a private
- * address is caught at connect time by `publicFetch` on Node servers.
+ * IPv4 already normalized to dotted-quad) or an IP address. Trailing dots are
+ * stripped first: `localhost.` is the same DNS name as `localhost`.
  */
 export function isBlockedHost(hostname: string): boolean {
   const h = hostname

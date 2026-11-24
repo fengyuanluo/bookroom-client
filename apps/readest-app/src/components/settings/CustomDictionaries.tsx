@@ -24,7 +24,6 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { useEnv } from '@/context/EnvContext';
-import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useFileSelector } from '@/hooks/useFileSelector';
 import { useCustomDictionaryStore } from '@/store/customDictionaryStore';
@@ -33,7 +32,6 @@ import {
   getLLMTranslators,
   useCustomTranslatorStore,
 } from '@/store/customTranslatorStore';
-import { isCustomTranslatorAllowed } from '@/utils/access';
 import { eventDispatcher } from '@/utils/event';
 import { evictProvider, isSystemDictionaryEnabled } from '@/services/dictionaries/registry';
 import { getContextTranslator } from '@/services/dictionaries/providers/contextProvider';
@@ -303,13 +301,11 @@ const CustomDictionaries: React.FC<CustomDictionariesProps> = ({ onBack }) => {
   }, []);
 
   // The context dictionary asks one of the user's OpenAI-compatible custom
-  // translators (#5544), which are a premium feature. Subscribing to the
-  // translators re-renders the row when one is added or removed.
-  const { token } = useAuth();
+  // translators (#5544). Subscribing to the translators re-renders the row
+  // when one is added or removed.
   useCustomTranslatorStore((s) => s.translators);
-  const hasPremium = isCustomTranslatorAllowed(token);
   const llmTranslators = getLLMTranslators();
-  const contextTranslator = hasPremium ? getContextTranslator() : undefined;
+  const contextTranslator = getContextTranslator();
   const prompts = useCustomTranslatorStore((s) => s.prompts).filter((p) => !p.deletedAt);
   const contextPromptId =
     settings.contextPromptId === 'custom' || prompts.some((p) => p.id === settings.contextPromptId)
@@ -481,11 +477,9 @@ const CustomDictionaries: React.FC<CustomDictionariesProps> = ({ onBack }) => {
           label: builtinLabel(id, _),
           kind: 'builtin',
           disabled: !contextTranslator,
-          reason: !hasPremium
-            ? _('Requires Readest Premium.')
-            : !contextTranslator
-              ? _('Add an OpenAI-compatible translator in Custom Translators to use it.')
-              : undefined,
+          reason: !contextTranslator
+            ? _('Add an OpenAI-compatible translator in Custom Translators to use it.')
+            : undefined,
         });
         continue;
       }

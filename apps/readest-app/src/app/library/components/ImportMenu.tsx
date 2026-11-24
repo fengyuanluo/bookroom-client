@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { MdContentPaste, MdLanguage, MdMenuBook, MdRssFeed } from 'react-icons/md';
+import { MdContentPaste, MdLanguage } from 'react-icons/md';
 import { LuLibrary } from 'react-icons/lu';
 import { IoFileTray } from 'react-icons/io5';
 import { useEnv } from '@/context/EnvContext';
@@ -14,9 +14,7 @@ export interface ImportMenuProps {
   onImportPastedText?: () => void;
   onImportBooksFromDirectory?: () => void;
   onImportFromWebBrowser?: () => void;
-  onImportBookFromNovelUrl?: () => void;
   onOpenCatalogManager: () => void;
-  onOpenFeeds: () => void;
 }
 
 const ImportMenu: React.FC<ImportMenuProps> = ({
@@ -26,9 +24,7 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
   onImportPastedText,
   onImportBooksFromDirectory,
   onImportFromWebBrowser,
-  onImportBookFromNovelUrl,
   onOpenCatalogManager,
-  onOpenFeeds,
 }) => {
   const _ = useTranslation();
   const { appService } = useEnv();
@@ -53,18 +49,8 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
     setIsDropdownOpen?.(false);
   };
 
-  const handleImportFromNovelUrl = () => {
-    onImportBookFromNovelUrl?.();
-    setIsDropdownOpen?.(false);
-  };
-
   const handleOpenCatalogManager = () => {
     onOpenCatalogManager();
-    setIsDropdownOpen?.(false);
-  };
-
-  const handleOpenFeeds = () => {
-    onOpenFeeds();
     setIsDropdownOpen?.(false);
   };
 
@@ -103,18 +89,6 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
           onClick={handleImportFromWebBrowser}
         />
       )}
-      {onImportBookFromNovelUrl && (
-        <MenuItem
-          label={_('From Web Novel')}
-          Icon={<MdMenuBook className='h-5 w-5' />}
-          onClick={handleImportFromNovelUrl}
-        />
-      )}
-      <MenuItem
-        label={_('From Feed URL')}
-        Icon={<MdRssFeed className='h-5 w-5' />}
-        onClick={handleOpenFeeds}
-      />
       <MenuItem
         label={appService?.isOnlineCatalogsAccessible ? _('Online Library') : _('OPDS Catalogs')}
         Icon={<LuLibrary className='h-5 w-5' />}

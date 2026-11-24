@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnvConfigType } from '@/services/environment';
-import type { ABSServer } from '@/types/audiobookshelf';
 import type { OPDSCatalog } from '@/types/opds';
 import type { SystemSettings } from '@/types/settings';
 import {
@@ -10,10 +9,8 @@ import {
 } from '@/services/sync/dataFlow/connectors';
 import { BookOrbitClient } from '@/services/bookorbit/BookOrbitClient';
 import { readFlowState } from '@/services/sync/dataFlow/log';
-import { fetchWithAuth } from '@/utils/fetch';
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }));
-vi.mock('@/utils/fetch', () => ({ fetchWithAuth: vi.fn() }));
 vi.mock('@/services/environment', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/environment')>()),
   isTauriAppPlatform: () => h.tauri,
@@ -25,9 +22,7 @@ const h = vi.hoisted(() => ({ tauri: false, web: false }));
 const context = (overrides: Partial<ConnectorContext> = {}): ConnectorContext => ({
   settings: {} as SystemSettings,
   signedIn: false,
-  plan: 'free',
   envConfig: {} as EnvConfigType,
-  absServers: [],
   opdsCatalogs: [],
   ...overrides,
 });
@@ -148,7 +143,6 @@ describe('getFlowConnectors', () => {
   it('keeps showing web Google Drive when its token is gone, as needing attention', async () => {
     h.web = true;
     const ctx = context({
-      plan: 'plus',
       settings: settings({ googleDrive: { enabled: true } }),
     });
 
@@ -201,28 +195,12 @@ describe('getFlowConnectors', () => {
 
   it('shows what a file backend is set to carry', () => {
     const ctx = context({
-      plan: 'pro',
       settings: settings({
         webdav: { enabled: true, syncNotes: false, syncBooks: true, strategy: 'send' },
       }),
     });
 
     expect(byId(ctx, 'webdav')).toMatchObject({ sources: [], sinks: ['progress', 'books'] });
-  });
-
-  it('shows Audiobookshelf for a usable server, as a book and progress source', () => {
-    const server = { id: '1', name: 'Home', url: 'http://x' } as ABSServer;
-
-    expect(byId(context({ absServers: [server] }), 'audiobookshelf')).toMatchObject({
-      sources: ['books', 'progress'],
-      sinks: ['progress'],
-    });
-    expect(
-      byId(context({ absServers: [{ ...server, disabled: true }] }), 'audiobookshelf'),
-    ).toBeUndefined();
-    expect(
-      byId(context({ absServers: [{ ...server, deletedAt: 1 }] }), 'audiobookshelf'),
-    ).toBeUndefined();
   });
 
   it('shows OPDS for an active catalog, as a book source', () => {
@@ -241,37 +219,6 @@ describe('getFlowConnectors', () => {
     h.tauri = false;
 
     expect(connector).toMatchObject({ sources: ['books'], sinks: ['books'] });
-  });
-
-  it('shows Send to Readest only when this device drains the inbox', () => {
-    expect(byId(context({ signedIn: true }), 'send')).toMatchObject({ sources: ['books'] });
-
-    localStorage.setItem('readest-send-drain-enabled', 'false');
-    expect(byId(context({ signedIn: true }), 'send')).toBeUndefined();
-  });
-});
-
-describe('Send to Readest connection check', () => {
-  const sendConnector = () => byId(context({ signedIn: true }), 'send')!;
-
-  beforeEach(() => localStorage.clear());
-
-  it('reads the inbox and never claims from it', async () => {
-    vi.mocked(fetchWithAuth).mockResolvedValue({ ok: true } as Response);
-
-    expect(await sendConnector().check()).toEqual({ ok: true });
-
-    const [url, init] = vi.mocked(fetchWithAuth).mock.calls.at(-1)!;
-    expect(String(url)).toMatch(/\/send\/inbox$/);
-    expect(init?.method).toBe('GET');
-  });
-
-  it('fails when the inbox refuses', async () => {
-    vi.mocked(fetchWithAuth).mockRejectedValue(new Error('Not authenticated'));
-
-    await runConnectionCheck(sendConnector());
-
-    expect(readFlowState().checks.send).toMatchObject({ ok: false, message: 'Not authenticated' });
   });
 });
 

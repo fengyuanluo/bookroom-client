@@ -6,6 +6,7 @@ import { GrimmoryClient, grimmoryAccountKey } from '@/services/grimmory/Grimmory
 import { GrimmorySyncStore } from '@/services/grimmory/GrimmorySyncStore';
 import { runGrimmoryPass } from '@/services/grimmory/notesPass';
 import { recordExchange } from '@/services/sync/dataFlow/log';
+import { progressSyncOf } from '@/services/remote';
 import { findTocItemBS } from '@/services/nav';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useReaderStore } from '@/store/readerStore';
@@ -100,6 +101,8 @@ export const useGrimmoryNotesSync = (bookKey: string) => {
     const bookData = getBookData(bookKey);
     const book = bookData?.book;
     if (!book || !bookData?.bookDoc || !getConfig(bookKey)?.location) return;
+    // Only books of a catalog that syncs through Grimmory (ADR 0010).
+    if (progressSyncOf(settings, book) !== 'grimmory') return;
 
     passRunning.current = true;
     const notes = { connector: 'grimmory', kind: 'notes', bookTitle: book.title } as const;

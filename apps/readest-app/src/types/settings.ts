@@ -3,10 +3,15 @@ import type { BookshelfState } from './bookshelf';
 import { CustomTheme } from '@/styles/themes';
 import { CustomFont } from '@/styles/fonts';
 import { CustomTexture } from '@/styles/textures';
-import { HighlightColor, HighlightStyle, UserHighlightColor, ViewSettings } from './book';
+import {
+  BookRemote,
+  HighlightColor,
+  HighlightStyle,
+  UserHighlightColor,
+  ViewSettings,
+} from './book';
 import { OPDSCatalog } from './opds';
 import { WebSource } from './webSource';
-import { ABSServer } from './audiobookshelf';
 import type { CustomTranslator, TranslationPrompt } from './translation';
 import type { CustomTTSService } from './customTTS';
 import type { AISettings } from '@/services/ai/types';
@@ -422,7 +427,6 @@ export type SyncCategory =
   | 'font'
   | 'texture'
   | 'opds_catalog'
-  | 'abs_server'
   | 'custom_translator'
   | 'custom_tts'
   | 'settings'
@@ -439,7 +443,6 @@ export const SYNC_CATEGORIES: readonly SyncCategory[] = [
   'font',
   'texture',
   'opds_catalog',
-  'abs_server',
   'custom_translator',
   'custom_tts',
   'settings',
@@ -540,7 +543,6 @@ export interface SystemSettings {
   autoImportBooksOnOpen: boolean;
   savedBookCoverForLockScreen: string;
   savedBookCoverForLockScreenPath: string;
-  telemetryEnabled: boolean;
   discordRichPresenceEnabled: boolean;
   bookshelves?: BookshelfState;
   libraryViewMode: LibraryViewModeType;
@@ -587,7 +589,8 @@ export interface SystemSettings {
   customDictionaries: ImportedDictionary[];
   dictionarySettings: DictionarySettings;
   opdsCatalogs: OPDSCatalog[];
-  absServers: ABSServer[];
+  /** The remote whose books the library shows (ADR 0010). Defaults to BookRoom. */
+  currentRemote?: BookRemote;
   /** User-configured translation backends; synced as `custom_translator`. */
   customTranslators?: CustomTranslator[];
   /** User translation prompts; synced as `translation_prompt`. */

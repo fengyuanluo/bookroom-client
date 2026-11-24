@@ -1,10 +1,6 @@
 import { md5 } from 'js-md5';
-import {
-  getAPIBaseUrl,
-  getNodeAPIBaseUrl,
-  isTauriAppPlatform,
-  isWebAppPlatform,
-} from '@/services/environment';
+import { getAPIBaseUrl, isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
+import { getCurrentAccessToken } from '@/services/bookroom/session';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { READEST_OPDS_USER_AGENT } from '@/services/constants';
 import {
@@ -14,8 +10,6 @@ import {
 } from '@/utils/customHeaders';
 import { tlsFetch } from '@/utils/tls';
 
-const OPDS_PROXY_URL = `${getAPIBaseUrl()}/opds/proxy`;
-const NODE_OPDS_PROXY_URL = `${getNodeAPIBaseUrl()}/opds/proxy`;
 /**
  * Extract username and password from URL credentials
  */
@@ -46,6 +40,14 @@ const extractCredentialsFromURL = (
 export const needsProxy = (url: string): boolean => {
   return isWebAppPlatform() && url.startsWith('http');
 };
+
+/**
+ * The header carrying the catalog's own credentials. Through the BookRoom
+ * proxy `Authorization` is taken by the BookRoom token, so they travel in
+ * `X-Upstream-Authorization` instead.
+ */
+export const upstreamAuthHeader = (useProxy: boolean): string =>
+  useProxy ? 'X-Upstream-Authorization' : 'Authorization';
 
 /**
  * On iOS/macOS the webview serves the app from the secure `tauri://localhost`
@@ -83,19 +85,6 @@ export const withOriginSuppressed = (headers: Record<string, string>): Record<st
     ? { Origin: '', ...headers }
     : headers;
 
-const PROXY_OVERRIDES: Record<string, string> = {
-  standardebooks: NODE_OPDS_PROXY_URL,
-};
-
-const getProxyBaseUrl = (url: string): string => {
-  for (const [domain, proxyUrl] of Object.entries(PROXY_OVERRIDES)) {
-    if (url.includes(domain)) {
-      return proxyUrl;
-    }
-  }
-  return OPDS_PROXY_URL;
-};
-
 /**
  * Generate proxied URL for OPDS requests
  */
@@ -113,9 +102,10 @@ export const getProxiedURL = (
     if (serializedHeaders) {
       params.append('headers', serializedHeaders);
     }
-    const baseUrl = getProxyBaseUrl(url);
-    const proxyUrl = `${baseUrl}?${params.toString()}`;
-    return proxyUrl;
+    const proxyUrl = `${getAPIBaseUrl()}/opds/proxy?${params.toString()}`;
+    // The token rides in the query so the URL also works as an <img> source.
+    const token = getCurrentAccessToken();
+    return token ? `${proxyUrl}&access_token=${encodeURIComponent(token)}` : proxyUrl;
   }
   return url;
 };
@@ -375,9 +365,10 @@ export const fetchWithAuth = async (
     ...(!useProxy ? normalizedCustomHeaders : {}),
     ...(options.headers as Record<string, string>),
   });
+  const authHeaderName = upstreamAuthHeader(useProxy);
   const headers: Record<string, string> = {
     ...baseHeaders,
-    ...(preemptiveAuth ? { Authorization: preemptiveAuth } : {}),
+    ...(preemptiveAuth ? { [authHeaderName]: preemptiveAuth } : {}),
   };
 
   const fetch = isTauriAppPlatform() ? tauriFetch : window.fetch;
@@ -431,7 +422,7 @@ export const fetchWithAuth = async (
           {
             ...options,
             method: options.method || 'GET',
-            headers: { ...headers, Authorization: authHeader },
+            headers: { ...headers, [authHeaderName]: authHeader },
           },
           allowSelfSignedCert,
         );

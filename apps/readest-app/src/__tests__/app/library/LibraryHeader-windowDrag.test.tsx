@@ -62,7 +62,6 @@ const renderHeader = (isSelectMode: boolean) =>
       onPullLibrary={vi.fn()}
       onImportBooksFromFiles={vi.fn()}
       onOpenCatalogManager={vi.fn()}
-      onOpenFeeds={vi.fn()}
       onToggleSelectMode={vi.fn()}
       onSelectAll={vi.fn()}
       onDeselectAll={vi.fn()}
@@ -111,7 +110,6 @@ describe('LibraryHeader window drag (#6917)', () => {
         onPullLibrary={vi.fn()}
         onImportBooksFromFiles={vi.fn()}
         onOpenCatalogManager={vi.fn()}
-        onOpenFeeds={vi.fn()}
         onToggleSelectMode={vi.fn()}
         onSelectAll={vi.fn()}
         onDeselectAll={vi.fn()}

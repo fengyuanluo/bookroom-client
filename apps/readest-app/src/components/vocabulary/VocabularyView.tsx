@@ -66,7 +66,6 @@ const VocabularyView: React.FC<VocabularyViewProps> = ({ onOpenBook }) => {
     chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
   const exportAs = async (format: 'csv' | 'anki') => {
-    if (format === 'anki' && !anki.guardFileExport()) return;
     const content = format === 'csv' ? toCsv(shown) : toAnkiText(shown);
     const filename = format === 'csv' ? 'readest-vocabulary.csv' : 'readest-vocabulary-anki.txt';
     const saved = await appService?.saveFile(filename, content, {
@@ -98,9 +97,6 @@ const VocabularyView: React.FC<VocabularyViewProps> = ({ onOpenBook }) => {
                 onClick={() => void anki.openImport()}
               >
                 {_('Import from Anki')}
-                {anki.premiumBadge && (
-                  <span className='badge badge-sm badge-ghost'>{anki.premiumBadge}</span>
-                )}
               </button>
             )}
           </>
@@ -169,7 +165,6 @@ const VocabularyView: React.FC<VocabularyViewProps> = ({ onOpenBook }) => {
             />
             <MenuItem
               label={_('Export to Anki')}
-              description={anki.premiumBadge}
               Icon={PiCardsThree}
               transient
               disabled={!shown.length}
@@ -178,7 +173,6 @@ const VocabularyView: React.FC<VocabularyViewProps> = ({ onOpenBook }) => {
             {anki.available && (
               <MenuItem
                 label={_('Import Anki Deck...')}
-                description={anki.premiumBadge}
                 Icon={PiDownloadSimple}
                 transient
                 onClick={() => void anki.openImport()}

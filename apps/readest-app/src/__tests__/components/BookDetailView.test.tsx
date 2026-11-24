@@ -128,41 +128,19 @@ describe('BookDetailView delete dropdown layout', () => {
   });
 });
 
-describe('BookDetailView More menu (Goodreads + Share)', () => {
+describe('BookDetailView More menu (Goodreads + Export)', () => {
   const openMore = (container: HTMLElement) => {
     const toggle = container.querySelector('button[aria-label="More Actions"]');
     expect(toggle).toBeTruthy();
     fireEvent.click(toggle!);
   };
 
-  it('folds Goodreads and Share into the hamburger menu', () => {
-    const { container, getByText } = renderView({ onShare: vi.fn(), shareEnabled: true });
-    // Goodreads is no longer a standalone icon button outside the menu.
+  it('folds Goodreads into the hamburger menu', () => {
+    const { container, getByText } = renderView();
+    // Goodreads is not a standalone icon button outside the menu.
     expect(container.querySelector('button[aria-label="More Actions"]')).toBeTruthy();
     openMore(container);
     expect(getByText('Search on Goodreads')).toBeTruthy();
-    expect(getByText('Share Book')).toBeTruthy();
-  });
-
-  it('enables Share and calls onShare when the book is shareable', () => {
-    const onShare = vi.fn();
-    const { container, getByText } = renderView({ onShare, shareEnabled: true });
-    openMore(container);
-    const shareButton = getByText('Share Book').closest('button');
-    expect(shareButton).toBeTruthy();
-    expect(shareButton!.disabled).toBe(false);
-    fireEvent.click(shareButton!);
-    expect(onShare).toHaveBeenCalledTimes(1);
-  });
-
-  it('disables Share when not shareable (logged out or no local file)', () => {
-    const onShare = vi.fn();
-    const { container, getByText } = renderView({ onShare, shareEnabled: false });
-    openMore(container);
-    const shareButton = getByText('Share Book').closest('button');
-    expect(shareButton!.disabled).toBe(true);
-    fireEvent.click(shareButton!);
-    expect(onShare).not.toHaveBeenCalled();
   });
 
   it('keeps Export in the More menu and calls onExport when the file exists', () => {
@@ -289,41 +267,6 @@ describe('BookDetailView cover viewer', () => {
     fireEvent.click(findViewer()!.querySelector('button[aria-label="Close"]')!);
     expect(findViewer()).toBeNull();
     expect(container.querySelector('button[aria-label="View Book Cover"]')).toBeTruthy();
-  });
-});
-
-describe('BookDetailView offline Audiobookshelf download (#6256)', () => {
-  const absBook = (overrides?: Partial<Book>) =>
-    makeBook({
-      format: 'ABS',
-      filePath: 'abs://srv1/item1',
-      downloadedAt: null,
-      uploadedAt: null,
-      ...overrides,
-    });
-
-  it('offers the download with a Premium badge for users who need to upgrade', () => {
-    const onDownloadOffline = vi.fn();
-    const { getByRole, getByText } = renderView({
-      book: absBook(),
-      onDownloadOffline,
-      offlinePremiumLabel: 'Premium',
-    });
-
-    fireEvent.click(getByRole('button', { name: /Download for Offline/ }));
-    expect(onDownloadOffline).toHaveBeenCalledTimes(1);
-    expect(getByText('Premium')).toBeTruthy();
-  });
-
-  it('swaps the download for Remove from Device Only once the book is on the device', () => {
-    const { queryByRole, container, getByText } = renderView({
-      book: absBook({ absDownloadedAt: 1 }),
-      onDownloadOffline: vi.fn(),
-    });
-
-    expect(queryByRole('button', { name: /Download for Offline/ })).toBeNull();
-    fireEvent.click(container.querySelector('button[aria-label="Delete Book Options"]')!);
-    expect(getByText('Remove from Device Only').closest('button')!.disabled).toBe(false);
   });
 });
 

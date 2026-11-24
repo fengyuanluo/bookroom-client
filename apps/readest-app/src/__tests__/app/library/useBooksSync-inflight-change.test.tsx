@@ -85,6 +85,7 @@ const makeBook = (overrides: Partial<Book> = {}): Book =>
     updatedAt: 2000,
     uploadedAt: null,
     deletedAt: null,
+    remote: 'bookroom',
     ...overrides,
   }) as Book;
 

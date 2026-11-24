@@ -43,8 +43,6 @@ import { ensurePassphraseUnlocked } from '@/services/sync/passphraseGate';
 import { isCredentialsSyncEnabled } from '@/services/sync/syncCategories';
 import { isSyncError } from '@/libs/errors';
 import { OPDSCatalog } from '@/types/opds';
-import { isLanAddress } from '@/utils/network';
-import { isSelfHosted } from '@/utils/access';
 import { allowsSelfSignedCert } from '@/utils/tls';
 import { eventDispatcher } from '@/utils/event';
 import { SectionTitle } from '@/components/settings/primitives';
@@ -116,7 +114,18 @@ async function validateOPDSCatalog(
  */
 const AUTO_DOWNLOAD_DEBOUNCE_MS = 5000;
 
-const EMPTY_NEW_CATALOG = {
+const EMPTY_NEW_CATALOG: {
+  name: string;
+  url: string;
+  description: string;
+  username: string;
+  password: string;
+  customHeadersInput: string;
+  proxyConsent: boolean;
+  autoDownload: boolean;
+  allowSelfSignedCert: boolean;
+  progressSync: OPDSCatalog['progressSync'];
+} = {
   name: '',
   url: '',
   description: '',
@@ -126,6 +135,7 @@ const EMPTY_NEW_CATALOG = {
   proxyConsent: false,
   autoDownload: false,
   allowSelfSignedCert: true,
+  progressSync: undefined,
 };
 
 interface CatalogCardProps {
@@ -471,16 +481,6 @@ export function CatalogManager({ inSubPage = false }: CatalogManagerProps = {}) 
       return;
     }
 
-    if (
-      process.env['NODE_ENV'] === 'production' &&
-      isWebAppPlatform() &&
-      !isSelfHosted() &&
-      isLanAddress(newCatalog.url)
-    ) {
-      setUrlError(_('Adding LAN addresses is not supported in the web app version.'));
-      return;
-    }
-
     if (isWebCatalogProxyWarningRequired && !newCatalog.proxyConsent) {
       setProxyConsentError(
         _(
@@ -549,6 +549,7 @@ export function CatalogManager({ inSubPage = false }: CatalogManagerProps = {}) 
         customHeaders,
         autoDownload: newCatalog.autoDownload || undefined,
         allowSelfSignedCert: newCatalog.allowSelfSignedCert,
+        progressSync: newCatalog.progressSync,
       });
     } else {
       useCustomOPDSStore.getState().addCatalog({
@@ -561,6 +562,7 @@ export function CatalogManager({ inSubPage = false }: CatalogManagerProps = {}) 
         customHeaders,
         autoDownload: newCatalog.autoDownload || undefined,
         allowSelfSignedCert: newCatalog.allowSelfSignedCert,
+        progressSync: newCatalog.progressSync,
       });
     }
     persistMutation();
@@ -585,6 +587,7 @@ export function CatalogManager({ inSubPage = false }: CatalogManagerProps = {}) 
       proxyConsent: false,
       autoDownload: catalog.autoDownload || false,
       allowSelfSignedCert: allowsSelfSignedCert(catalog),
+      progressSync: catalog.progressSync,
     });
     setEditingCatalogId(catalog.id);
     setShowAddDialog(true);
@@ -671,7 +674,7 @@ export function CatalogManager({ inSubPage = false }: CatalogManagerProps = {}) 
     if (inSubPage) {
       params.set('from', 'settings-integrations');
     }
-    router.push(`/opds?${params.toString()}`);
+    router.push(`/catalog?${params.toString()}`);
   };
 
   const handleCloseDialog = () => {
@@ -848,6 +851,33 @@ export function CatalogManager({ inSubPage = false }: CatalogManagerProps = {}) 
                       <span className='text-xs text-error'>{urlError}</span>
                     </div>
                   )}
+                </div>
+
+                <div className='flex flex-col'>
+                  <div className='flex select-none items-center justify-between px-1 py-2'>
+                    <span className='text-sm'>{_('Sync Progress With')}</span>
+                  </div>
+                  <select
+                    value={newCatalog.progressSync ?? ''}
+                    onChange={(e) =>
+                      setNewCatalog({
+                        ...newCatalog,
+                        progressSync: (e.target.value || undefined) as OPDSCatalog['progressSync'],
+                      })
+                    }
+                    className='select eink-bordered text-sm'
+                    disabled={isValidating}
+                  >
+                    <option value=''>{_('None')}</option>
+                    <option value='kosync'>{_('KOReader Sync')}</option>
+                    <option value='grimmory'>Grimmory</option>
+                    <option value='bookorbit'>BookOrbit</option>
+                  </select>
+                  <p className='text-base-content/60 px-1 pt-1 text-xs'>
+                    {_(
+                      'Progress and notes of books downloaded from this catalog sync through this service, using its account in Integrations',
+                    )}
+                  </p>
                 </div>
 
                 {isTauriAppPlatform() && (

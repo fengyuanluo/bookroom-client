@@ -22,8 +22,6 @@ export type TTSVoice = {
   name: string;
   lang: string;
   disabled?: boolean;
-  // Premium voices: the plan that unlocks them, shown as a badge.
-  tier?: 'plus' | 'pro';
   // A trait the engine spells into the voice id, shown as a badge instead of
   // in the name.
   variant?: 'multilingual' | 'expressive';

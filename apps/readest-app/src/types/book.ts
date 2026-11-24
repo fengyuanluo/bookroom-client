@@ -1,4 +1,5 @@
 import type { TTSPacks } from '@/utils/ttsPacks';
+import type { FileSyncBackendKind } from '@/services/sync/file/providerRegistry';
 import type { InkStroke } from '@/services/handwriting/model';
 import { BookMetadata } from '@/libs/document';
 import { TTSHighlightOptions } from '@/services/tts/types';
@@ -19,14 +20,14 @@ export type BookFormat =
   | 'FBZ'
   | 'TXT'
   | 'MD'
-  | 'HTML'
-  // Streaming audiobook from an Audiobookshelf server; filePath is abs://<serverId>/<itemId>
-  | 'ABS'
-  // Streaming audiobook from an OPDS catalog; filePath is opdsaudio://<encoded entry> (#6224)
-  | 'OPDSAUDIO'
-  // Streaming audiobook from BookOrbit's audiobook API; filePath is bookorbit://<bookId> (#6224)
-  | 'BOOKORBIT';
+  | 'HTML';
 export type BookNoteType = 'bookmark' | 'annotation' | 'excerpt' | 'notebook' | 'ink';
+/**
+ * The remote a book belongs to (ADR 0010): its shelf membership, file,
+ * progress and notes sync only there. `opds:<catalog id>` books were downloaded
+ * from that catalog; `local` books stay on this device.
+ */
+export type BookRemote = 'bookroom' | 'local' | FileSyncBackendKind | `opds:${string}`;
 export type ReadingStatus = 'unread' | 'reading' | 'finished' | 'abandoned';
 export type HighlightStyle = 'highlight' | 'underline' | 'squiggly';
 // Predefined highlight colors, can be extended with custom hex colors
@@ -97,6 +98,8 @@ export interface ImportBookOptions {
   inPlace?: boolean;
   /** Pre-built lookup index for O(1) dedup during batch imports. */
   lookupIndex?: BookLookupIndex;
+  /** The remote a newly added book belongs to. Defaults to `local`. */
+  remote?: BookRemote;
 }
 
 export interface Book {
@@ -114,6 +117,9 @@ export interface Book {
   hash: string;
   // Metadata md5 hash, used to aggregate different versions of the same book
   metaHash?: string;
+  // The remote this book belongs to; absent means `local`. Device-local: the
+  // owning remote stamps it on every row it hands this device.
+  remote?: BookRemote;
   format: BookFormat;
   title: string; // editable title, defaulting to the filename stem for PDFs
   originalFilename?: string; // original import basename, including the extension
@@ -168,18 +174,6 @@ export interface Book {
   // an unopened book can show and sort by it (#6662). Like `hasNarration`, it is
   // re-derived on every import; once opened, `progress[1]` holds the same total.
   pageCount?: number;
-  duration?: number; // total audio length in seconds (ABS audiobooks)
-  // Marks this ABS stub as a podcast show or ebook rather than an audiobook.
-  // Audio books remain unmarked (absMediaType undefined).
-  absMediaType?: 'podcast' | 'ebook';
-  // Episode count for an ABS podcast show stub. Drives the library grid's
-  // episode-count badge and lets reconcileAbsBooks detect a new episode as a
-  // change even though title/author/duration are otherwise unchanged.
-  episodeCount?: number;
-  // When this device finished downloading an ABS stub's media for offline use
-  // (audio tracks, or an ebook-only item's file). Device-local like
-  // `downloadedAt`: the files exist only here, so it never syncs.
-  absDownloadedAt?: number | null;
 
   metadata?: BookMetadata;
   // Field-level LWW timestamp for the metadata group (title, author, tags,
@@ -725,10 +719,9 @@ export interface BookConfig {
   viewSettings?: Partial<ViewSettings>;
   /**
    * A device-local recording paired with this ebook. The audio files live
-   * under Books/<hash>/audiobook/, or stream from an Audiobookshelf server
-   * (see PairedAudiobook.source); either way the pairing is deliberately
-   * excluded from cloud sync, and ordinary reading progress remains the
-   * shared cross-device state.
+   * under Books/<hash>/audiobook/; the pairing is deliberately excluded from
+   * cloud sync, and ordinary reading progress remains the shared cross-device
+   * state.
    */
   audiobook?: PairedAudiobook;
   hardcover?: HardcoverBookLink;
@@ -784,42 +777,6 @@ export interface AudiobookChapterMapping {
   audioChapterId: string;
 }
 
-/**
- * An audiobook streamed from an Audiobookshelf server instead of copied to
- * the device. The pairing then has a single virtual file
- * (`abs://<serverId>/<itemId>`) whose chapters are timed on the item's global
- * timeline, and the track list here maps that timeline onto the server's
- * media files; nothing under Books/<hash>/audiobook/ exists for it.
- */
-export interface PairedAudiobookAbsSource {
-  kind: 'audiobookshelf';
-  serverId: string;
-  itemId: string;
-  tracks: {
-    index: number;
-    startOffset: number; // global seconds
-    duration: number; // seconds
-    contentUrl: string; // server-relative
-  }[];
-}
-
-/**
- * An audiobook streamed from a BookOrbit server. One BookOrbit book owns both
- * the ebook and the audio, so the pairing needs only that book's id; the
- * virtual file is `bookorbit://<bookId>` and the tracks map its global
- * timeline onto the server's assets, exactly as the ABS variant does.
- */
-export interface PairedAudiobookBookOrbitSource {
-  kind: 'bookorbit';
-  bookId: number;
-  tracks: {
-    index: number;
-    startOffset: number; // global seconds
-    duration: number; // seconds
-    contentUrl: string; // server-relative
-  }[];
-}
-
 export interface PairedAudiobook {
   version: 1;
   title?: string;
@@ -828,7 +785,6 @@ export interface PairedAudiobook {
   chapters: AudiobookChapter[];
   mappings: AudiobookChapterMapping[];
   createdAt: number;
-  source?: PairedAudiobookAbsSource | PairedAudiobookBookOrbitSource;
 }
 
 export interface BookDataRecord {

@@ -15,8 +15,6 @@ import { md5Fingerprint } from '@/utils/md5';
 import type { TranslationFunc } from '@/hooks/useTranslation';
 import { stubTranslation as _ } from '@/utils/misc';
 import { SIZE_PER_LOC, SIZE_PER_TIME_UNIT } from '@/services/constants';
-import { isFeedBook } from '@/services/rss/feedBookUrl';
-import { isAbsOfflineCapable, isAudiobook } from '@/utils/audiobook';
 
 /** Valid sort types for the library */
 const VALID_SORT_TYPES: LibrarySortByType[] = Object.values(LibrarySortByType);
@@ -205,8 +203,8 @@ export const findSelectedManualGroup = (
  * The books a bulk Download should actually fetch (#5244): the selection
  * expanded through {@link expandBookshelfSelection}, narrowed to the books that
  * live in the cloud but not on this device. The predicate matches the per-book
- * "Download Book" affordance — a feed book has no file to fetch (#5307), and a
- * book that was never uploaded or is already local has nothing to pull down.
+ * "Download Book" affordance — a book that was never uploaded or is already
+ * local has nothing to pull down.
  */
 export const selectDownloadableBooks = (
   ids: string[],
@@ -215,43 +213,17 @@ export const selectDownloadableBooks = (
 ): Book[] => {
   const hashes = new Set(expandBookshelfSelection(ids, items));
   return books.filter(
-    (book) =>
-      hashes.has(book.hash) &&
-      !book.deletedAt &&
-      !isFeedBook(book) &&
-      !!book.uploadedAt &&
-      !book.downloadedAt,
-  );
-};
-
-/**
- * The Audiobookshelf audiobooks a bulk Download should keep on the device
- * (#6256): the expanded selection narrowed to the books the per-book
- * "Download for Offline" action applies to and that aren't offline yet.
- */
-export const selectAbsOfflineBooks = (
-  ids: string[],
-  items: (Book | BooksGroup)[],
-  books: Book[],
-): Book[] => {
-  const hashes = new Set(expandBookshelfSelection(ids, items));
-  return books.filter(
-    (book) =>
-      hashes.has(book.hash) &&
-      !book.deletedAt &&
-      isAbsOfflineCapable(book) &&
-      !book.absDownloadedAt,
+    (book) => hashes.has(book.hash) && !book.deletedAt && !!book.uploadedAt && !book.downloadedAt,
   );
 };
 
 /**
  * Whether a bulk "Remove from Device Only" may drop this book's local file
- * (#7318): only when the book stays somewhere else — the cloud, or the
- * Audiobookshelf server for an offline ABS download — so the library keeps a
- * copy to download again.
+ * (#7318): only when the book stays in the cloud, so the library keeps a copy
+ * to download again.
  */
 export const canRemoveFromDeviceOnly = (book: Book): boolean =>
-  (!!book.downloadedAt && !!book.uploadedAt) || !!book.absDownloadedAt;
+  !!book.downloadedAt && !!book.uploadedAt;
 
 // Calibre custom column names and values, flattened for searching (#4811).
 const getCalibreColumnsText = (item: Book) =>
@@ -368,16 +340,6 @@ export const getTimeRemainingMinutes = (
   book: Book,
   medianPageDurationSecs?: number,
 ): number | undefined => {
-  // An audiobook already knows how long it is: `progress` is [seconds,
-  // seconds] against `duration`, with no pages and no reading pace involved.
-  // Running it through the page estimate turned 7h of listening into 446h and
-  // floated every audiobook to the top of a time-remaining sort (#6224).
-  if (isAudiobook(book)) {
-    const total = book.duration ?? 0;
-    const secondsLeft = total - (book.progress?.[0] ?? 0);
-    if (!(secondsLeft > 0)) return undefined;
-    return Math.max(1, Math.round(secondsLeft / 60));
-  }
   const pagesLeft = book.progress ? book.progress[1] - book.progress[0] : undefined;
   if (!pagesLeft) return undefined;
   return convertPagesToTimeRemainingMinutes(pagesLeft, medianPageDurationSecs);
@@ -1061,10 +1023,7 @@ export type BookContextMenuItemId =
   | 'searchGoodreads'
   | 'download'
   | 'upload'
-  | 'share'
   | 'sendNearby'
-  | 'offlineDownload'
-  | 'offlineRemove'
   | 'delete';
 
 /**
@@ -1178,7 +1137,7 @@ export const pickFresherMetadata = (
  */
 export const getBookContextMenuItemIds = (
   book: Book,
-  opts?: { localSend?: boolean; absOffline?: boolean },
+  opts?: { localSend?: boolean },
 ): BookContextMenuItemId[] => {
   const ids: BookContextMenuItemId[] = ['select', 'group'];
   ids.push(book.readingStatus === 'finished' ? 'markUnread' : 'markFinished');
@@ -1192,22 +1151,10 @@ export const getBookContextMenuItemIds = (
     ids.push('clearStatus');
   }
   ids.push('showDetails', 'showInFinder', 'searchGoodreads');
-  // A feed book has no file to move: every transfer action would fail, and the
-  // share dialog uploads before it can hand out a link (issue #5307).
-  if (!isFeedBook(book)) {
-    if (book.uploadedAt && !book.downloadedAt) ids.push('download');
-    if (!book.uploadedAt && book.downloadedAt) ids.push('upload');
-    // Share is offered for any local-or-uploaded book; the dialog uploads first
-    // if the book hasn't been pushed yet.
-    if (book.downloadedAt || book.uploadedAt) ids.push('share');
-    // LocalSend needs the file on this device; cloud-only books are excluded.
-    if (opts?.localSend && (book.downloadedAt || book.filePath)) ids.push('sendNearby');
-  }
-  // Keep an Audiobookshelf book's media on the device (#6256); needs a native
-  // filesystem, so the caller enables it on Tauri only.
-  if (opts?.absOffline && isAbsOfflineCapable(book)) {
-    ids.push(book.absDownloadedAt ? 'offlineRemove' : 'offlineDownload');
-  }
+  if (book.uploadedAt && !book.downloadedAt) ids.push('download');
+  if (!book.uploadedAt && book.downloadedAt) ids.push('upload');
+  // LocalSend needs the file on this device; cloud-only books are excluded.
+  if (opts?.localSend && (book.downloadedAt || book.filePath)) ids.push('sendNearby');
   ids.push('delete');
   return ids;
 };

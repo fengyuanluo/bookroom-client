@@ -1,63 +1,36 @@
 import * as React from 'react';
 import type { Metadata, Viewport } from 'next';
-import Script from 'next/script';
 import { ViewTransitions } from '@/components/ViewTransitions';
 import { EnvProvider } from '@/context/EnvContext';
 import Providers from '@/components/Providers';
 
 import '../styles/globals.css';
 
-const url = 'https://web.readest.com/';
-const title = 'Readest — Where You Read, Digest and Get Insight';
+const title = 'BookRoom';
 const description =
-  'Discover Readest, the ultimate online ebook reader for immersive and organized reading. ' +
-  'Enjoy seamless access to your digital library, powerful tools for highlighting, bookmarking, ' +
-  'and note-taking, and support for multiple book views. ' +
-  'Perfect for deep reading, analysis, and understanding. Explore now!';
-const previewImage = 'https://cdn.readest.com/images/open_graph_preview_read_now.png';
+  'BookRoom: your self-hosted library, read anywhere with progress, notes and shelves in sync.';
 
+// Served by a self-hosted BookRoom server, so no fixed origin and no social
+// preview cards.
 export const metadata: Metadata = {
-  metadataBase: new URL(url),
   title: {
     default: title,
-    template: '%s | Readest',
+    template: '%s | BookRoom',
   },
   description,
   generator: 'Next.js',
   manifest: '/manifest.json',
-  keywords: ['epub', 'pdf', 'ebook', 'reader', 'readest', 'pwa'],
-  authors: [
-    {
-      name: 'readest',
-      url: 'https://github.com/readest/readest',
-    },
-  ],
   icons: {
     icon: [{ url: '/icon.png' }, { url: '/favicon.ico' }],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
   },
   appleWebApp: {
     capable: true,
-    title: 'Readest',
+    title,
     statusBarStyle: 'default',
-  },
-  openGraph: {
-    type: 'website',
-    url,
-    title,
-    description,
-    images: [previewImage],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title,
-    description,
-    images: [previewImage],
   },
   other: {
     'apple-mobile-web-app-capable': 'yes',
-    'twitter:domain': 'web.readest.com',
-    'twitter:url': url,
   },
 };
 
@@ -123,13 +96,6 @@ const devHmrPatchScript = `(${patchTauriHmrWebSocket.toString()})(${JSON.stringi
   process.env['TAURI_DEV_HOST'],
 )});`;
 
-// `/runtime-config.js` is a dynamic route handler that only exists in the
-// web/Docker build. The Tauri build is statically exported (`output:
-// 'export'`), so the file isn't emitted — the request would return the SPA
-// fallback HTML and crash with `Unexpected token '<'`. All runtime-config
-// consumers fall back to `NEXT_PUBLIC_*` envs baked at build time on Tauri.
-const shouldInjectRuntimeConfig = process.env['NEXT_PUBLIC_APP_PLATFORM'] === 'web';
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Browser extensions can inject attributes on <html> before React hydrates it.
   return (
@@ -139,9 +105,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={process.env['NEXT_PUBLIC_APP_PLATFORM'] === 'tauri' ? 'edge-to-edge' : ''}
     >
       <head>
-        {shouldInjectRuntimeConfig ? (
-          <Script src='/runtime-config.js' strategy='beforeInteractive' />
-        ) : null}
         {shouldInjectDevHmrPatch ? (
           <script dangerouslySetInnerHTML={{ __html: devHmrPatchScript }} />
         ) : null}

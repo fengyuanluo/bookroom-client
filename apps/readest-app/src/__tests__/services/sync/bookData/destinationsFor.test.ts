@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const gateMock = vi.fn();
 vi.mock('@/services/sync/cloudSyncProvider', async (orig) => ({
   ...(await orig<typeof import('@/services/sync/cloudSyncProvider')>()),
-  resolveCloudSyncGate: (...a: unknown[]) => gateMock(...a),
+  resolveBookSyncGate: (...a: unknown[]) => gateMock(...a),
 }));
 const createProviderMock = vi.fn();
 vi.mock('@/services/sync/file/providerRegistry', () => ({
@@ -34,50 +34,62 @@ const setBook = (book: Partial<Book> | null) =>
   });
 
 beforeEach(() => {
-  gateMock.mockReset().mockReturnValue({ readest: false, backends: [], paused: false });
+  gateMock.mockReset().mockReturnValue({ readest: false, backends: [] });
   createProviderMock
     .mockReset()
     .mockImplementation(async (kind: string) => ({ rootPath: '/', kind }));
   getUserIDMock.mockReset().mockResolvedValue('u1');
   setSettings({});
-  setBook({ uploadedAt: 1 });
+  setBook({ uploadedAt: 1, remote: 'bookroom' });
 });
 afterEach(() => setBook(null));
 
 describe('getBookDataDestinations', () => {
-  test('returns every enabled, unpaused file-sync backend', async () => {
-    gateMock.mockReturnValue({ readest: false, backends: ['webdav', 'gdrive'], paused: false });
+  test('returns every backend the gate allows', async () => {
+    gateMock.mockReturnValue({ readest: false, backends: ['webdav', 'gdrive'] });
     expect(await ids()).toEqual(['webdav', 'gdrive']);
   });
 
   test('skips a backend whose provider cannot be built', async () => {
-    gateMock.mockReturnValue({ readest: false, backends: ['webdav', 'gdrive'], paused: false });
+    gateMock.mockReturnValue({ readest: false, backends: ['webdav', 'gdrive'] });
     createProviderMock.mockImplementation(async (kind: string) =>
       kind === 'webdav' ? null : { rootPath: '/' },
     );
     expect(await ids()).toEqual(['gdrive']);
   });
 
-  test('returns none while backends are paused', async () => {
-    gateMock.mockReturnValue({ readest: false, backends: ['webdav'], paused: true });
+  test('returns none for a backend book whose remote is not enabled', async () => {
+    gateMock.mockReturnValue({ readest: false, backends: [] });
+    setBook({ uploadedAt: 1, remote: 'webdav' });
     expect(await ids()).toEqual([]);
+    expect(createProviderMock).not.toHaveBeenCalled();
   });
 
   test('adds Readest Cloud for an uploaded book', async () => {
-    gateMock.mockReturnValue({ readest: true, backends: ['webdav'], paused: false });
+    gateMock.mockReturnValue({ readest: true, backends: ['webdav'] });
     setSettings({ readestCloud: { enabled: true } } as Partial<SystemSettings>);
     expect(await ids()).toEqual(['readest', 'webdav']);
   });
 
   test('skips Readest Cloud for a book that is not uploaded', async () => {
-    gateMock.mockReturnValue({ readest: true, backends: [], paused: false });
+    gateMock.mockReturnValue({ readest: true, backends: [] });
     setSettings({ readestCloud: { enabled: true } } as Partial<SystemSettings>);
-    setBook({ uploadedAt: null });
+    setBook({ uploadedAt: null, remote: 'bookroom' });
     expect(await ids()).toEqual([]);
   });
 
+  test('skips Readest Cloud for a book on another remote', async () => {
+    gateMock.mockReturnValue({ readest: false, backends: ['webdav'] });
+    setSettings({
+      readestCloud: { enabled: true },
+      webdav: { enabled: true },
+    } as Partial<SystemSettings>);
+    setBook({ uploadedAt: 1, remote: 'webdav' });
+    expect(await ids()).toEqual(['webdav']);
+  });
+
   test('skips Readest Cloud with the Books category off', async () => {
-    gateMock.mockReturnValue({ readest: true, backends: [], paused: false });
+    gateMock.mockReturnValue({ readest: true, backends: [] });
     setSettings({
       readestCloud: { enabled: true },
       syncCategories: { book: false },
@@ -86,14 +98,14 @@ describe('getBookDataDestinations', () => {
   });
 
   test('skips Readest Cloud when signed out', async () => {
-    gateMock.mockReturnValue({ readest: true, backends: [], paused: false });
+    gateMock.mockReturnValue({ readest: true, backends: [] });
     setSettings({ readestCloud: { enabled: true } } as Partial<SystemSettings>);
     getUserIDMock.mockResolvedValue(null);
     expect(await ids()).toEqual([]);
   });
 
   test('returns none when Book Data is off', async () => {
-    gateMock.mockReturnValue({ readest: true, backends: ['webdav'], paused: false });
+    gateMock.mockReturnValue({ readest: true, backends: ['webdav'] });
     setSettings({
       readestCloud: { enabled: true },
       syncCategories: { book_data: false },

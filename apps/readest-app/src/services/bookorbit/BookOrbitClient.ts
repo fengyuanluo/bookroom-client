@@ -5,7 +5,8 @@ import { isLanAddress } from '@/utils/network';
 import { normalizeCustomHeaders } from '@/utils/customHeaders';
 import { allowsSelfSignedCert, tlsFetch } from '@/utils/tls';
 import { getAppVersion } from '@/utils/version';
-import { getAPIBaseUrl, isTauriAppPlatform } from '../environment';
+import { isTauriAppPlatform } from '../environment';
+import { postToBookRoomProxy } from '../bookroom/proxy';
 import { formatKoDatetime } from './noteMapping';
 import type {
   BookOrbitVersionInfo,
@@ -53,7 +54,7 @@ export class BookOrbitClient {
   private deviceFields(): PluginDeviceFields {
     return {
       deviceId: this.config.deviceId,
-      deviceModel: (this.config.deviceName || 'Readest').slice(0, 100),
+      deviceModel: (this.config.deviceName || 'BookRoom').slice(0, 100),
       pluginVersion: `readest-${getAppVersion()}`.slice(0, 20),
       // Always the UTC frame — see formatKoDatetime; keys derived from
       // server-minted datetimes then agree across Readest devices.
@@ -93,11 +94,7 @@ export class BookOrbitClient {
       headers,
       body: body ? (JSON.parse(body) as Record<string, unknown>) : undefined,
     };
-    return await fetch(`${getAPIBaseUrl()}/bookorbit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(proxyBody),
-    });
+    return await postToBookRoomProxy('/bookorbit', proxyBody);
   }
 
   private async requestJson<T>(

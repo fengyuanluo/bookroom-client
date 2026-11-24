@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/services/environment', () => ({
   default: { getAppService: async () => ({}) },
+  isTauriAppPlatform: () => false,
 }));
 vi.mock('@/services/statistics/statisticsDb', () => ({
   StatisticsDb: { open: mocks.open },

@@ -28,8 +28,14 @@ const PULL_PAGE = 1000;
  * Push local events newer than the push cursor, in bounded chunks. The cursor
  * advances per successful chunk, so an interrupted push (e.g. a 1000-event
  * backlog over flaky network) resumes from the last chunk rather than restarting.
+ * Events of books `isSynced` rejects stay on this device (ADR 0010), yet still
+ * move the cursor past them.
  */
-export async function pushStats(stats: StatisticsDb, client: PushClient): Promise<void> {
+export async function pushStats(
+  stats: StatisticsDb,
+  client: PushClient,
+  isSynced: (bookMd5: string) => boolean,
+): Promise<void> {
   const cursor = await stats.getCursor('push');
   const { events, books } = await stats.getEventsForPush(cursor);
   if (events.length === 0) return;
@@ -42,15 +48,18 @@ export async function pushStats(stats: StatisticsDb, client: PushClient): Promis
     const lastStart = events[end - 1]!.startTime;
     while (end < events.length && events[end]!.startTime === lastStart) end++;
     const chunk = events.slice(i, end);
-    const seen = new Set<string>();
-    const chunkBooks: StatBookRecord[] = [];
-    for (const e of chunk) {
-      if (seen.has(e.bookMd5)) continue;
-      seen.add(e.bookMd5);
-      const b = bookByHash.get(e.bookMd5);
-      if (b) chunkBooks.push(toWireBook(b));
+    const synced = chunk.filter((e) => isSynced(e.bookMd5));
+    if (synced.length > 0) {
+      const seen = new Set<string>();
+      const chunkBooks: StatBookRecord[] = [];
+      for (const e of synced) {
+        if (seen.has(e.bookMd5)) continue;
+        seen.add(e.bookMd5);
+        const b = bookByHash.get(e.bookMd5);
+        if (b) chunkBooks.push(toWireBook(b));
+      }
+      await client.pushChanges({ statBooks: chunkBooks, statPages: synced.map(toWirePage) });
     }
-    await client.pushChanges({ statBooks: chunkBooks, statPages: chunk.map(toWirePage) });
     await stats.setCursor('push', chunk[chunk.length - 1]!.startTime);
     i = end;
   }

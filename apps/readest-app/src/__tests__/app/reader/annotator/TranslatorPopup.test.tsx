@@ -41,12 +41,6 @@ vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ token: mockToken }),
 }));
 
-// The mock tokens are not JWTs, so stand in for the premium check.
-vi.mock('@/utils/access', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/utils/access')>()),
-  isCustomTranslatorAllowed: (token: string | null) => token === 'premium-token',
-}));
-
 vi.mock('@/store/settingsStore', () => ({
   useSettingsStore: () => ({
     settings: { globalReadSettings: { translateTargetLang: 'zh', translationProvider: 'azure' } },
@@ -66,8 +60,7 @@ vi.mock('@/hooks/useTranslator', () => ({
 vi.mock('@/services/translators', () => ({
   getTranslators: () => mockTranslators,
   isTranslatorAvailable: () => true,
-  getTranslatorDisplayLabel: (t: TranslationProvider, _hasToken: boolean, hasPremium: boolean) =>
-    t.premiumRequired && !hasPremium ? `${t.label} (Premium)` : t.label,
+  getTranslatorDisplayLabel: (t: TranslationProvider) => t.label,
 }));
 
 vi.mock('@/components/Popup', () => ({
@@ -119,20 +112,6 @@ describe('TranslatorPopup error reporting', () => {
     ).toBeTruthy();
     expect(screen.queryByText(/Please log in first/)).toBeNull();
     expect(screen.getByText('bing translate failed with status 500')).toBeTruthy();
-  });
-
-  it('asks for a login only when the provider requires one', async () => {
-    mockToken = null;
-    mockTranslator = { name: 'deepl', label: 'DeepL', authRequired: true };
-    mockTranslators = [mockTranslator];
-    mockTranslate.mockRejectedValue(new Error('Authentication token is required'));
-    await renderPopup();
-
-    expect(
-      await screen.findByText(
-        'Unable to fetch the translation. Please log in first and try again.',
-      ),
-    ).toBeTruthy();
   });
 });
 
@@ -198,31 +177,11 @@ describe('TranslatorPopup provider list', () => {
   beforeEach(() => {
     mockTranslate.mockReset().mockResolvedValue(['译文']);
     mockTranslator = { name: 'azure', label: 'Azure Translator' };
-    mockTranslators = [
-      mockTranslator,
-      { name: 'custom:x', label: 'Ollama', premiumRequired: true },
-    ];
+    mockTranslators = [mockTranslator, { name: 'custom:x', label: 'Ollama' }];
   });
 
-  it('relabels custom translators when the session gains premium', async () => {
-    mockToken = 'readest-token';
-    const { rerender } = await renderPopup();
-    expect(await screen.findByRole('option', { name: 'Ollama (Premium)' })).toBeTruthy();
-
-    mockToken = 'premium-token';
-    const { default: TranslatorPopup } = await import(
-      '@/app/reader/components/annotator/TranslatorPopup'
-    );
-    rerender(
-      <TranslatorPopup
-        bookKey='book-1'
-        text='cohort'
-        position={{ point: { x: 0, y: 0 } }}
-        trianglePosition={{ point: { x: 0, y: 0 }, dir: 'up' }}
-        popupWidth={300}
-        popupHeight={200}
-      />,
-    );
+  it('lists custom translators by their given label', async () => {
+    await renderPopup();
     expect(await screen.findByRole('option', { name: 'Ollama' })).toBeTruthy();
   });
 });

@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { useState } from 'react';
-import { MdCheckCircle, MdCheckCircleOutline, MdOutlineOfflinePin } from 'react-icons/md';
+import { MdCheckCircle, MdCheckCircleOutline } from 'react-icons/md';
 import {
   LiaCloudUploadAltSolid,
   LiaCloudDownloadAltSolid,
@@ -17,11 +17,8 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useResponsiveSize } from '@/hooks/useResponsiveSize';
 import { LibraryCoverFitType, LibraryViewModeType } from '@/types/settings';
 import { navigateToLogin } from '@/utils/nav';
-import { isReadestCloudStorageActive } from '@/services/sync/cloudSyncProvider';
-import { isFeedBook } from '@/services/rss/feedBookUrl';
-import { isAudiobook } from '@/utils/audiobook';
+import { syncsBookToBookRoom } from '@/services/sync/cloudSyncProvider';
 import { formatAuthors, formatDescription, formatSeries } from '@/utils/book';
-import { splitDuration } from '@/utils/time';
 import { INDETERMINATE_PROGRESS } from '@/utils/transfer';
 import { getBookTags } from '../utils/libraryUtils';
 import ReadingProgress from './ReadingProgress';
@@ -99,34 +96,6 @@ const BookItem: React.FC<BookItemProps> = ({
   // entry is removed once the transfer settles, including at 100%.
   const isTransferring = transferProgress !== null;
   const isIndeterminate = transferProgress === INDETERMINATE_PROGRESS;
-
-  // ABS books track progress in seconds, not pages, so the row shows a
-  // duration/remaining-time label instead of ReadingProgress's page percent:
-  // total length when unplayed, remaining time once started (mirrors the
-  // scrubber's "-remaining" convention).
-  const isAbsBook = isAudiobook(book);
-  const isPodcastShow = book.absMediaType === 'podcast';
-  const absDuration = book.duration ?? 0;
-  const absCurrentTime = book.progress?.[0] ?? 0;
-  // Units rather than a bare clock: `formatCompactTime` renders 7h55m and
-  // 7m55s both as "7:55", which reads fine as a live countdown in the mini
-  // player but not on a shelf where a 10-hour book sits beside a 35-second
-  // one. Here there is room to say which is which.
-  const formatLength = (seconds: number): string => {
-    const { hours, minutes, seconds: secs } = splitDuration(seconds);
-    if (hours > 0) return _('{{hours}}h {{minutes}}m', { hours, minutes });
-    if (minutes > 0) return _('{{minutes}}m', { minutes });
-    return _('{{seconds}}s', { seconds: secs });
-  };
-  const absTimeLabel =
-    absCurrentTime > 0
-      ? `-${formatLength(Math.max(absDuration - absCurrentTime, 0))}`
-      : formatLength(absDuration);
-  // A podcast show has no total duration or resume position of its own (those
-  // live per-episode, a later task), so the row badges its episode count
-  // instead of the duration/remaining-time label audiobooks get.
-  const episodeCountLabel = _('{{count}} episodes', { count: book.episodeCount ?? 0 });
-
   return (
     <div
       role='none'
@@ -231,32 +200,19 @@ const BookItem: React.FC<BookItemProps> = ({
         <div
           className={clsx(
             'flex items-center',
-            book.progress || book.readingStatus || isAbsBook || pageCount
-              ? 'justify-between'
-              : 'justify-end',
+            book.progress || book.readingStatus || pageCount ? 'justify-between' : 'justify-end',
           )}
           style={{
             height: `${iconSize15}px`,
             minHeight: `${iconSize15}px`,
           }}
         >
-          {isAbsBook && book.readingStatus !== 'finished' ? (
-            <div
-              className='text-neutral-content/70 flex min-w-0 justify-between text-xs'
-              role='status'
-            >
-              <span className='truncate tabular-nums'>
-                {isPodcastShow ? episodeCountLabel : absTimeLabel}
-              </span>
-            </div>
-          ) : (
-            (book.progress || book.readingStatus || pageCount) && (
-              <ReadingProgress
-                book={book}
-                showTimeRemaining={showTimeRemaining}
-                pageCount={pageCount}
-              />
-            )
+          {(book.progress || book.readingStatus || pageCount) && (
+            <ReadingProgress
+              book={book}
+              showTimeRemaining={showTimeRemaining}
+              pageCount={pageCount}
+            />
           )}
           {mode === 'list' && tags.length > 0 && (
             // The tags only take the space left between the progress and the
@@ -299,22 +255,13 @@ const BookItem: React.FC<BookItemProps> = ({
                 </div>
               </button>
             )}
-            {(book.hasNarration || isAbsBook) && (
+            {book.hasNarration && (
               <div
                 className='pt-0.5 sm:pt-px'
-                title={isAbsBook ? _('Audiobook') : _('Includes narration')}
-                aria-label={isAbsBook ? _('Audiobook') : _('Includes narration')}
+                title={_('Includes narration')}
+                aria-label={_('Includes narration')}
               >
                 <LiaHeadphonesSolid size={iconSize15} />
-              </div>
-            )}
-            {book.absDownloadedAt && (
-              <div
-                className='pt-0.5 sm:pt-px'
-                title={_('Available Offline')}
-                aria-label={_('Available Offline')}
-              >
-                <MdOutlineOfflinePin size={iconSize15} />
               </div>
             )}
             {isTransferring
@@ -322,14 +269,8 @@ const BookItem: React.FC<BookItemProps> = ({
                 // buttons hidden while a transfer is active. Same condition as
                 // the overlay, so a book can never show neither.
                 null
-              : // A feed book has no file to move either way, so it never gets a
-                // cloud badge — it would only queue a transfer that fails (#5307).
-                // Same for an ABS book: it streams from the server and never has
-                // uploadedAt/downloadedAt set, so without this check the badge
-                // would render forever and Upload would always fail.
-                !isFeedBook(book) &&
-                !isAudiobook(book) &&
-                (!book.uploadedAt || (book.uploadedAt && !book.downloadedAt)) && (
+              : ((!book.uploadedAt && syncsBookToBookRoom(settings, book)) ||
+                  (book.uploadedAt && !book.downloadedAt)) && (
                   <button
                     aria-label={!book.uploadedAt ? _('Upload Book') : _('Download Book')}
                     className='show-cloud-button -m-2 p-2'
@@ -346,9 +287,7 @@ const BookItem: React.FC<BookItemProps> = ({
                       }
                     }}
                   >
-                    {!book.uploadedAt && isReadestCloudStorageActive(settings) && (
-                      <LiaCloudUploadAltSolid size={iconSize15} />
-                    )}
+                    {!book.uploadedAt && <LiaCloudUploadAltSolid size={iconSize15} />}
                     {book.uploadedAt && !book.downloadedAt && (
                       <LiaCloudDownloadAltSolid size={iconSize15} />
                     )}

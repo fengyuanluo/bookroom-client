@@ -17,6 +17,7 @@ import { GrimmorySyncStore } from '@/services/grimmory/GrimmorySyncStore';
 import { pushStatsToGrimmory } from '@/services/grimmory/statsPush';
 import { pushStats, pullStats } from '@/services/statistics/statsSync';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
+import { isBookRoomHash, syncsHashVia } from '@/services/remote';
 import { useSettingsStore } from '@/store/settingsStore';
 import { eventDispatcher } from '@/utils/event';
 
@@ -60,7 +61,8 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
 
   const syncEnabled = () => !!user && isSyncCategoryEnabled('stats');
 
-  // BookOrbit stats push needs no Readest account — only the integration.
+  // BookOrbit stats push needs no BookRoom account — only the integration, and
+  // only for books of a catalog that syncs through BookOrbit (ADR 0010).
   const bookOrbitStatsPush = (db: StatisticsDb): Promise<unknown> | undefined => {
     const { settings } = useSettingsStore.getState();
     const bookorbit = settings.bookorbit;
@@ -73,7 +75,9 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
     ) {
       return undefined;
     }
-    return pushStatsToBookOrbit(db, new BookOrbitClient(bookorbit));
+    return pushStatsToBookOrbit(db, new BookOrbitClient(bookorbit), (hash) =>
+      syncsHashVia(settings, hash, 'bookorbit'),
+    );
   };
 
   // Sessions go to Grimmory only for books matched there by the reader's pass.
@@ -101,7 +105,7 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   };
 
   const pushToAllTargets = (db: StatisticsDb, closing = false) => {
-    if (syncEnabled()) runBestEffort(pushStats(db, new SyncClient()));
+    if (syncEnabled()) runBestEffort(pushStats(db, new SyncClient(), isBookRoomHash));
     const bookOrbitPush = bookOrbitStatsPush(db);
     if (bookOrbitPush) runBestEffort(bookOrbitPush);
     const grimmoryPush = grimmoryStatsPush(db, closing);

@@ -1,6 +1,5 @@
 import { AppService } from '@/types/system';
-import { READEST_NODE_BASE_URL, READEST_WEB_BASE_URL } from './constants';
-import { getRuntimeConfig } from './runtimeConfig';
+import { getServerUrl } from './bookroom/session';
 import { getOSPlatform } from '@/utils/misc';
 
 declare global {
@@ -13,13 +12,14 @@ export const isTauriAppPlatform = () => process.env['NEXT_PUBLIC_APP_PLATFORM'] 
 export const isWebAppPlatform = () => process.env['NEXT_PUBLIC_APP_PLATFORM'] === 'web';
 export const hasCli = () => window.__READEST_CLI_ACCESS === true;
 export const isPWA = () => window.matchMedia('(display-mode: standalone)').matches;
+/**
+ * The BookRoom server origin. The web build is served by BookRoom itself, so
+ * it defaults to its own origin; native builds use the server chosen at
+ * sign-in and have none before it.
+ */
 export const getBaseUrl = () =>
-  getRuntimeConfig()?.apiBaseUrl ??
-  process.env['API_BASE_URL'] ??
-  process.env['NEXT_PUBLIC_API_BASE_URL'] ??
-  READEST_WEB_BASE_URL;
-export const getNodeBaseUrl = () =>
-  process.env['NEXT_PUBLIC_NODE_BASE_URL'] ?? READEST_NODE_BASE_URL;
+  getServerUrl() ??
+  (isWebAppPlatform() && typeof window !== 'undefined' ? window.location.origin : '');
 
 /**
  * Whether window move/resize has to be driven from JS with pointer events.
@@ -37,20 +37,7 @@ export const isMacPlatform = () =>
 
 export const getCommandPaletteShortcut = () => (isMacPlatform() ? '⌘⇧P' : 'Ctrl+Shift+P');
 
-const isWebDevMode = () => process.env['NODE_ENV'] === 'development' && isWebAppPlatform();
-
-// Dev API only in development mode and web platform
-// with command `pnpm dev-web`
-// for production build or tauri app use the production Web API
-export const getAPIBaseUrl = () => (isWebDevMode() ? '/api' : `${getBaseUrl()}/api`);
-
-// Readest Voice synthesizes on the production GPU service, which a local dev
-// server cannot reach: its routes use the production Web API even under
-// `pnpm dev-web` (a self-hosted apiBaseUrl still applies).
-export const getReadestVoiceAPIBaseUrl = () => `${getBaseUrl()}/api`;
-
-// For Node.js API that currently not supported in some edge runtimes
-export const getNodeAPIBaseUrl = () => (isWebDevMode() ? '/api' : `${getNodeBaseUrl()}/api`);
+export const getAPIBaseUrl = () => `${getBaseUrl()}/api`;
 
 export interface EnvConfigType {
   getAppService: () => Promise<AppService>;

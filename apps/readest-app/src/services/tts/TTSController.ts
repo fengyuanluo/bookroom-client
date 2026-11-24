@@ -24,10 +24,8 @@ import { EdgeTTSClient } from './EdgeTTSClient';
 import { BufferedTTSClient } from './BufferedTTSClient';
 import { createBookTTSCacheStore } from './providers/bookCacheStore';
 import { CachingProvider } from './providers/cache';
-import { ReadestVoiceProvider } from './providers/readest';
 import { OpenAICompatibleSpeechProvider } from './providers/openaiCompatible';
 import type { CustomTTSService } from '@/types/customTTS';
-import { getAccessToken, isCustomTTSAllowed } from '@/utils/access';
 import { SectionTimeline, TimelineSentence } from './SectionTimeline';
 import { estimateSentenceSeconds, hydrateProvisionalDurations } from './ttsDuration';
 import { DownloadableSentence, SectionEnumerator, TTSDownloader } from './TTSDownloader';
@@ -174,7 +172,6 @@ export class TTSController extends EventTarget {
   // The owning reader's book key, bound (and re-bound) by attachView; the
   // per-book TTS cache derives its book hash from it.
   bookKey?: string;
-  isAuthenticated: boolean = false;
   preprocessCallback?: (ssml: string) => Promise<string>;
   onSectionChange?: (sectionIndex: number) => Promise<void>;
   // When true, the speak loop pauses at the end of the current chapter/section
@@ -277,12 +274,8 @@ export class TTSController extends EventTarget {
   ttsClient: TTSClient;
   ttsWebClient: TTSClient;
   ttsEdgeClient: EdgeTTSClient;
-  // Readest Voice (premium, Plus/Pro): never the default engine, only chosen
-  // by picking one of its voices.
-  ttsReadestClient: BufferedTTSClient;
-  #readestProvider: ReadestVoiceProvider;
-  // The user's own OpenAI-compatible services (premium, BYOK): like Readest
-  // Voice, never the default engine, only chosen by picking one of its voices.
+  // The user's own OpenAI-compatible services (BYOK): never the default
+  // engine, only chosen by picking one of its voices.
   ttsCustomClient: BufferedTTSClient;
   // Supplied by the reader (setCustomTTSServices) so the controller stays free
   // of store imports.
@@ -291,7 +284,6 @@ export class TTSController extends EventTarget {
   ttsMediaOverlayClient: MediaOverlayClient;
   ttsWebVoices: TTSVoice[] = [];
   ttsEdgeVoices: TTSVoice[] = [];
-  ttsReadestVoices: TTSVoice[] = [];
   ttsCustomVoices: TTSVoice[] = [];
   ttsNativeVoices: TTSVoice[] = [];
   ttsTargetLang: string = '';
@@ -303,7 +295,6 @@ export class TTSController extends EventTarget {
   constructor(
     appService: AppService | null,
     view: FoliateView,
-    isAuthenticated: boolean = false,
     preprocessCallback?: (ssml: string) => Promise<string>,
     onSectionChange?: (sectionIndex: number) => Promise<void>,
   ) {
@@ -317,16 +308,7 @@ export class TTSController extends EventTarget {
       () => this.bookKey?.split('-')[0] || null,
     );
     this.ttsEdgeClient = new EdgeTTSClient(this, appService, cacheStore);
-    this.#readestProvider = new ReadestVoiceProvider(this);
-    this.ttsReadestClient = new BufferedTTSClient(
-      cacheStore ? new CachingProvider(this.#readestProvider, cacheStore) : this.#readestProvider,
-      this,
-      appService,
-    );
-    const customProvider = new OpenAICompatibleSpeechProvider(
-      () => this.#customTTSServices(),
-      async () => isCustomTTSAllowed(await getAccessToken()),
-    );
+    const customProvider = new OpenAICompatibleSpeechProvider(() => this.#customTTSServices());
     this.ttsCustomClient = new BufferedTTSClient(
       cacheStore ? new CachingProvider(customProvider, cacheStore) : customProvider,
       this,
@@ -340,7 +322,6 @@ export class TTSController extends EventTarget {
     this.ttsClient = this.ttsWebClient;
     this.appService = appService;
     this.view = view;
-    this.isAuthenticated = isAuthenticated;
     this.preprocessCallback = preprocessCallback;
     this.onSectionChange = onSectionChange;
   }
@@ -520,7 +501,6 @@ export class TTSController extends EventTarget {
     // Started together: each can take seconds (Edge synthesizes a probe
     // sentence, system TTS waits for its voices), and play waits on them all.
     // Results are still taken in priority order.
-    const readestReady = withinEngineTimeout(this.ttsReadestClient.init(), false);
     const customReady = withinEngineTimeout(this.ttsCustomClient.init(), false);
     const edgeReady = withinEngineTimeout(this.ttsEdgeClient.init(), false);
     const nativeReady = this.ttsNativeClient
@@ -537,11 +517,7 @@ export class TTSController extends EventTarget {
     if (await webReady) {
       availableClients.push(this.ttsWebClient);
     }
-    // Last: Readest Voice is never the default, only a remembered choice.
-    const readestOk = await readestReady;
-    if (readestOk) {
-      availableClients.push(this.ttsReadestClient);
-    }
+    // Last: custom services are never the default, only a remembered choice.
     const customOk = await customReady;
     if (customOk) {
       availableClients.push(this.ttsCustomClient);
@@ -557,13 +533,11 @@ export class TTSController extends EventTarget {
       }
     }
     // An engine whose init failed or timed out has no voices to list.
-    [this.ttsWebVoices, this.ttsEdgeVoices, this.ttsReadestVoices, this.ttsCustomVoices] =
-      await Promise.all([
-        withinEngineTimeout(this.ttsWebClient.getAllVoices(), []),
-        withinEngineTimeout(this.ttsEdgeClient.getAllVoices(), []),
-        readestOk ? withinEngineTimeout(this.ttsReadestClient.getAllVoices(), []) : [],
-        customOk ? this.ttsCustomClient.getAllVoices() : [],
-      ]);
+    [this.ttsWebVoices, this.ttsEdgeVoices, this.ttsCustomVoices] = await Promise.all([
+      withinEngineTimeout(this.ttsWebClient.getAllVoices(), []),
+      withinEngineTimeout(this.ttsEdgeClient.getAllVoices(), []),
+      customOk ? this.ttsCustomClient.getAllVoices() : [],
+    ]);
 
     // A book that ships its own narration should be read by its narrator, not
     // synthesized — that is the whole point of having the recording. The
@@ -623,46 +597,6 @@ export class TTSController extends EventTarget {
   #attachNarrationSource(book: FoliateView['book']): void {
     if (this.#usesPairedAudiobook(book) && this.#pairedAudiobook && this.appService) {
       const narrator = this.#pairedAudiobook.narrator;
-      const source = this.#pairedAudiobook.source;
-      if (source?.kind === 'audiobookshelf') {
-        // Streamed from the server: the tracks resolve to URLs carrying the
-        // live token, and there is no blob to fall back to. Loaded on demand
-        // so the server store (and its settings graph) stays out of this
-        // module's imports for every other book.
-        this.ttsMediaOverlayClient.attachSource({
-          ...(narrator ? { narrator } : {}),
-          textHighlight: false,
-          resolveTracks: async () => {
-            const [{ absNarrationTracks }, { getMediaProxyBase }] = await Promise.all([
-              import('@/services/audiobook/absPairing'),
-              import('@/services/audiobook/mediaProxy'),
-            ]);
-            return absNarrationTracks(source, await getMediaProxyBase());
-          },
-          loadBlob: async () => {
-            throw new Error('Audiobookshelf server not found');
-          },
-        });
-        return;
-      }
-      if (source?.kind === 'bookorbit') {
-        // Streamed like the above, but the tracks cannot be handed to a media
-        // element as URLs at all: BookOrbit marks its audio
-        // `Cross-Origin-Resource-Policy: same-origin`, so `loadTrack` fetches
-        // each one natively and the composite plays it from a blob.
-        this.ttsMediaOverlayClient.attachSource({
-          ...(narrator ? { narrator } : {}),
-          textHighlight: false,
-          resolveTracks: async () =>
-            (await import('@/services/bookorbit/narration')).bookOrbitNarrationTracks(source),
-          loadTrack: async (path) =>
-            (await import('@/services/bookorbit/narration')).loadBookOrbitTrack(path),
-          loadBlob: async () => {
-            throw new Error('BookOrbit server not found');
-          },
-        });
-        return;
-      }
       this.ttsMediaOverlayClient.attachSource({
         ...(narrator ? { narrator } : {}),
         textHighlight: false,
@@ -1064,10 +998,9 @@ export class TTSController extends EventTarget {
   // document + TTS instance per section, so it never disturbs live playback,
   // and labels sentences identically to ensureTimeline so packs written here
   // and by playback share one manifest.
-  // Downloads synthesize with the engine the reader listens with: Readest
-  // Voice or a custom service when one is active, Edge otherwise.
+  // Downloads synthesize with the engine the reader listens with: a custom
+  // service when one is active, Edge otherwise.
   #downloadClient(): BufferedTTSClient {
-    if (this.ttsClient === this.ttsReadestClient) return this.ttsReadestClient;
     if (this.ttsClient === this.ttsCustomClient) return this.ttsCustomClient;
     return this.ttsEdgeClient;
   }
@@ -1273,7 +1206,6 @@ export class TTSController extends EventTarget {
   // client (same as supportsPlaybackInfo/supportsGapControl's comparison).
   setSentenceGap(sec: number): void {
     this.ttsEdgeClient.setSentenceGap(sec);
-    this.ttsReadestClient.setSentenceGap(sec);
     this.ttsCustomClient.setSentenceGap(sec);
   }
 
@@ -1285,7 +1217,6 @@ export class TTSController extends EventTarget {
     // The buffered client needs it too: it schedules this pause as silence on
     // its own audio clock rather than letting #delayParagraphGap sleep for it.
     this.ttsEdgeClient.setParagraphGap(sec);
-    this.ttsReadestClient.setParagraphGap(sec);
     this.ttsCustomClient.setParagraphGap(sec);
   }
 
@@ -2313,19 +2244,15 @@ export class TTSController extends EventTarget {
     const preferred = TTSUtils.getPreferredClientForLang(lang);
     const languageClient = this.#availableClients.find((client) => client.name === preferred);
     if (languageClient && !this.narrationActive) this.ttsClient = languageClient;
-    // Readest Voice is a remembered choice, never a default: for a book in a
-    // language it has no voice for, the default engine reads instead, and the
-    // choice stays remembered for books it can read.
-    // Custom services likewise, unless a voice of theirs reads any language.
+    // Custom services are a remembered choice, never a default: for a book in
+    // a language they have no voice for, the default engine reads instead,
+    // unless a voice of theirs reads any language.
     const speaks = (voices: TTSVoice[]) =>
       voices.some(
         (voice) =>
           !voice.disabled && (voice.lang === MULTILINGUAL_LANG || isSameLang(voice.lang, lang)),
       );
-    if (
-      (this.ttsClient === this.ttsReadestClient && !speaks(this.ttsReadestVoices)) ||
-      (this.ttsClient === this.ttsCustomClient && !speaks(this.ttsCustomVoices))
-    ) {
+    if (this.ttsClient === this.ttsCustomClient && !speaks(this.ttsCustomVoices)) {
       this.ttsClient = this.ttsEdgeClient.initialized ? this.ttsEdgeClient : this.ttsWebClient;
     }
     this.setPrimaryLang(lang);
@@ -2333,7 +2260,6 @@ export class TTSController extends EventTarget {
 
   async setPrimaryLang(lang: string) {
     if (this.ttsEdgeClient.initialized) this.ttsEdgeClient.setPrimaryLang(lang);
-    if (this.ttsReadestClient.initialized) this.ttsReadestClient.setPrimaryLang(lang);
     if (this.ttsCustomClient.initialized) this.ttsCustomClient.setPrimaryLang(lang);
     if (this.ttsWebClient.initialized) this.ttsWebClient.setPrimaryLang(lang);
     if (this.ttsNativeClient?.initialized) this.ttsNativeClient?.setPrimaryLang(lang);
@@ -2353,17 +2279,6 @@ export class TTSController extends EventTarget {
     const ttsWebVoices = await this.ttsWebClient.getVoices(lang);
     const ttsEdgeVoices = await this.ttsEdgeClient.getVoices(lang);
     const ttsNativeVoices = (await this.ttsNativeClient?.getVoices(lang)) ?? [];
-    // Listed for every reader, the voices their plan lacks greyed out; hidden
-    // only when there is no catalog (kill switch, offline).
-    const ttsReadestVoices =
-      (await this.ttsReadestClient.getAllVoices()).length > 0
-        ? (await this.ttsReadestClient.getVoices(lang)).filter((group) => group.voices.length > 0)
-        : [];
-    // The picker is open: boot a GPU worker so the first window is warm, but
-    // only for a reader whose plan has a Readest voice to play.
-    if (ttsReadestVoices.some((group) => group.voices.some((voice) => !voice.disabled))) {
-      this.#readestProvider.warmup();
-    }
     // The book's own narrator leads the list when there is one: it is the best
     // voice available for that book by a wide margin.
     const narrationVoices = this.narrationAvailable
@@ -2377,7 +2292,6 @@ export class TTSController extends EventTarget {
     const voicesGroups = [
       ...narrationVoices,
       ...ttsCustomVoices,
-      ...ttsReadestVoices,
       ...ttsEdgeVoices,
       ...ttsNativeVoices,
       ...ttsWebVoices,
@@ -2410,16 +2324,12 @@ export class TTSController extends EventTarget {
     }
 
     // Never for the engine-default voice (''): Edge and native treat it as
-    // "any enabled voice", and matching it here would move a paying reader who
-    // never chose Readest Voice onto it.
+    // "any enabled voice", and matching it here would move a reader who never
+    // chose a custom service onto it.
     const useCustomTTS =
       voiceId !== '' &&
       this.ttsCustomClient.initialized &&
       this.ttsCustomVoices.some((voice) => voice.id === voiceId);
-    const useReadestTTS =
-      voiceId !== '' &&
-      this.ttsReadestClient.initialized &&
-      this.ttsReadestVoices.some((voice) => voice.id === voiceId && !voice.disabled);
     const useEdgeTTS = !!this.ttsEdgeVoices.find(
       (voice) => (voiceId === '' || voice.id === voiceId) && !voice.disabled,
     );
@@ -2428,9 +2338,6 @@ export class TTSController extends EventTarget {
     );
     if (useCustomTTS) {
       this.ttsClient = this.ttsCustomClient;
-      await this.ttsClient.setRate(this.ttsRate);
-    } else if (useReadestTTS) {
-      this.ttsClient = this.ttsReadestClient;
       await this.ttsClient.setRate(this.ttsRate);
     } else if (useEdgeTTS) {
       this.ttsClient = this.ttsEdgeClient;
@@ -2805,9 +2712,6 @@ export class TTSController extends EventTarget {
     }
     if (this.ttsEdgeClient.initialized) {
       await this.ttsEdgeClient.shutdown();
-    }
-    if (this.ttsReadestClient.initialized) {
-      await this.ttsReadestClient.shutdown();
     }
     if (this.ttsCustomClient.initialized) {
       await this.ttsCustomClient.shutdown();

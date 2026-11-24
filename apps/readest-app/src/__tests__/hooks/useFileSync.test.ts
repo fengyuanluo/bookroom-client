@@ -55,12 +55,8 @@ const routing = vi.hoisted(() => ({
 }));
 
 vi.mock('@/services/sync/cloudSyncProvider', () => ({
-  getActiveFileSyncBackends: () => routing.backends,
+  resolveBookSyncGate: () => ({ readest: false, backends: routing.backends }),
   settingsKeyForBackend: (kind: FileSyncBackendKind) => (kind === 'gdrive' ? 'googleDrive' : kind),
-}));
-
-vi.mock('@/hooks/useQuotaStats', () => ({
-  useQuotaStats: () => ({ userProfilePlan: 'pro' }),
 }));
 
 vi.mock('@/hooks/useTranslation', () => ({

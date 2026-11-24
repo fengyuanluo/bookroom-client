@@ -10,6 +10,12 @@ vi.mock('@/services/hardcover/hardcoverOAuth', async (importOriginal) => ({
   refreshHardcoverTokens: refresh,
 }));
 
+// The web build reaches Hardcover through BookRoom's proxy; these tests cover
+// the Hardcover token, which the proxy carries in `X-Upstream-Authorization`.
+vi.mock('@/services/bookroom/proxy', () => ({
+  bookRoomProxyHeaders: vi.fn(async (headers: Record<string, string>) => headers),
+}));
+
 type Api = { minRequestIntervalMs: number; request: (q: string, v: object) => Promise<unknown> };
 
 const res = (status: number) =>
@@ -36,7 +42,8 @@ describe('HardcoverClient OAuth', () => {
     (c as unknown as Api).minRequestIntervalMs = 0;
     return { api: c as unknown as Api, onRefreshed };
   };
-  const authHeaders = () => fetchMock.mock.calls.map((c) => c[1].headers.authorization);
+  const authHeaders = () =>
+    fetchMock.mock.calls.map((c) => c[1].headers['X-Upstream-Authorization']);
 
   beforeEach(() => {
     refresh.mockReset().mockResolvedValue(fresh);

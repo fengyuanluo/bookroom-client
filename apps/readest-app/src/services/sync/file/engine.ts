@@ -1,6 +1,5 @@
 import { Book, BookConfig, BookNote } from '@/types/book';
 import type { ProgressHandler } from '@/utils/transfer';
-import { isAudiobook } from '@/utils/audiobook';
 import { FileHead, FileSyncError, FileSyncProvider } from './provider';
 import { LocalStore } from './localStore';
 import {
@@ -137,6 +136,12 @@ export interface SyncLibraryOptions {
    * suitable for driving a UI like "Syncing 3 / 42 — Project Hail Mary".
    */
   onProgress?: (info: { book: Book; index: number; total: number; action?: string }) => void;
+  /**
+   * Hashes of library books another remote owns (ADR 0010). Discovery never
+   * adopts them, so this backend's cover and config can't overwrite theirs;
+   * their entries stay in library.json for the devices that do own them here.
+   */
+  foreignHashes?: ReadonlySet<string>;
 }
 
 /**
@@ -361,10 +366,6 @@ export class FileSyncEngine {
    * sync into a full per-book request storm. `no-source` costs zero requests.
    */
   async pushBookFile(book: Book): Promise<PushBookFileResult> {
-    // ABS books stream from the server and never have a local file to push —
-    // guard here too, not just in syncLibrary's needsFilePush, since this is
-    // also called directly by the explicit per-book Upload action.
-    if (isAudiobook(book)) return { uploaded: false, reason: 'no-source' };
     const dirPath = buildBookDirPath(this.provider.rootPath, book.hash);
     const path = buildBookFilePath(this.provider.rootPath, book);
     const dirs = [...ancestorsOf(`${dirPath}/.placeholder`), dirPath];
@@ -718,11 +719,8 @@ export class FileSyncEngine {
     }
     const knownNoSource = noSourceMemo;
     const hasLocalFile = (b: Book): boolean => !!(b.downloadedAt || b.filePath);
-    // ABS books stream from the server and never have a file to push, in a
-    // full sync or otherwise — their config/cover still sync normally below.
     const needsFilePush = (book: Book): boolean =>
       options.syncBooks &&
-      !isAudiobook(book) &&
       (fullSync ||
         (!uploadedHashes.has(book.hash) &&
           hasLocalFile(book) &&
@@ -983,6 +981,7 @@ export class FileSyncEngine {
       // 1) Seed with hashes from the remote index (when the file exists).
       if (remoteIndex && remoteIndex.books) {
         for (const rb of remoteIndex.books) {
+          if (options.foreignHashes?.has(rb.hash)) continue;
           const local = allBooksMap.get(rb.hash);
           const revivesLocalTombstone =
             !!local?.deletedAt && (rb.updatedAt ?? 0) > (local.deletedAt ?? 0);
@@ -1007,7 +1006,7 @@ export class FileSyncEngine {
         for (const entry of dirEntries) {
           if (!entry.isDirectory) continue;
           remoteHashDirs.add(entry.name);
-          if (!allBooksMap.has(entry.name)) {
+          if (!allBooksMap.has(entry.name) && !options.foreignHashes?.has(entry.name)) {
             candidateHashes.add(entry.name);
           }
         }

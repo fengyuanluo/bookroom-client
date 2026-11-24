@@ -36,7 +36,6 @@ import {
   OneDriveSettings,
   ICloudSettings,
 } from '@/types/settings';
-import { UserStorageQuota, UserDailyTranslationQuota, UserDailyTTSQuota } from '@/types/quota';
 import { getDefaultMaxBlockSize, getDefaultMaxInlineSize } from '@/utils/config';
 import { stubTranslation as _ } from '@/utils/misc';
 import { DEFAULT_AI_SETTINGS } from './ai/constants';
@@ -255,7 +254,6 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   openLastBooks: false,
   lastOpenBooks: [],
   autoImportBooksOnOpen: false,
-  telemetryEnabled: true,
   discordRichPresenceEnabled: false,
   libraryViewMode: 'grid',
   librarySortBy: LibrarySortByType.Updated,
@@ -313,7 +311,6 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
     font: true,
     texture: true,
     opds_catalog: true,
-    abs_server: true,
     custom_translator: true,
     custom_tts: true,
     settings: true,
@@ -349,7 +346,7 @@ export const DEFAULT_READSETTINGS: ReadSettings = {
   notebookWidth: '25%',
   isNotebookPinned: false,
   notebookActiveTab: 'notes',
-  translationProvider: 'deepl',
+  translationProvider: 'google',
   translateTargetLang: 'EN',
   wordLensAutoDownload: true,
 
@@ -566,7 +563,7 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
 
 export const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   translationEnabled: false,
-  translationProvider: 'deepl',
+  translationProvider: 'google',
   translationPromptId: 'default',
   translateTargetLang: '',
   showTranslateSource: true,
@@ -987,50 +984,23 @@ export const CJK_FONTS_PATTENS = new RegExp(
 
 export const BOOK_IDS_SEPARATOR = '+';
 
-export const DOWNLOAD_READEST_URL = 'https://readest.com?utm_source=readest_web';
+// BookRoom's own client repository: the source the AGPL requires us to offer,
+// and the GitHub Releases the updater reads.
+export const BOOKROOM_SOURCE_URL = 'https://github.com/luofengyuan/bookroom-client';
 
-export const READEST_WEB_BASE_URL = 'https://web.readest.com';
-export const READEST_NODE_BASE_URL = 'https://node.readest.com';
-
-export const SHARE_BASE_URL = `${READEST_WEB_BASE_URL}/s`;
-export const SHARE_EXPIRATION_DAYS = [1, 3, 7] as const;
-
-// Send to Readest — the domain inbound capture emails are addressed to, the
-// R2 bucket holding raw inbound payloads, and the per-user cap on undrained
-// inbox items (defense against a leaked address).
-export const SEND_EMAIL_DOMAIN = 'readest.com';
-export const SEND_INBOX_BUCKET = 'readest-send-inbox';
-export const SEND_INBOX_PENDING_LIMIT = 50;
-// Hard cap on the size of a single uploaded EPUB the browser extension can
-// drop into the inbox. 30 MB is the same total-asset cap the client-side
-// bundler enforces — plus a bit of head-room for chapter HTML / structural
-// overhead. Beyond this size a clipped article is almost certainly an
-// over-illustrated page that would never read well in the EPUB anyway.
-export const SEND_INBOX_FILE_MAX_BYTES = 40 * 1024 * 1024;
-export const SHARE_DEFAULT_EXPIRATION_DAYS = 3;
-export const SHARE_MAX_PER_USER = 50;
-export const SHARE_TOKEN_LENGTH = 22;
-export const SHARE_PRESIGN_TTL_SECONDS = 300;
-export const SHARE_CFI_MAX_LENGTH = 512;
-
-const LATEST_DOWNLOAD_BASE_URL = 'https://download.readest.com/releases';
+const LATEST_DOWNLOAD_BASE_URL = `${BOOKROOM_SOURCE_URL}/releases/latest/download`;
 
 export const READEST_UPDATER_FILE = `${LATEST_DOWNLOAD_BASE_URL}/latest.json`;
 
 export const READEST_CHANGELOG_FILE = `${LATEST_DOWNLOAD_BASE_URL}/release-notes.json`;
 
-export const READEST_NIGHTLY_UPDATER_FILE = 'https://download.readest.com/nightly/latest.json';
+export const READEST_NIGHTLY_UPDATER_FILE = `${BOOKROOM_SOURCE_URL}/releases/download/nightly/latest.json`;
 
 // Public (verification) key, identical to src-tauri/tauri.conf.json `updater.pubkey`.
 // Used to verify nightly artifacts in the custom install flows (portable /
-// AppImage / Android). Safe to embed — it is a public key.
-export const READEST_UPDATER_PUBKEY =
-  'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFMEQ1QjE2OEU1NEIzNTEKUldSUnMxU09GbHNOdmpEaWFMT1crRFpEV2VORzQ2MklxaFc0M1R0ci9xY2c1bENXS0xhM1R1L2sK';
-
-export const READEST_PUBLIC_STORAGE_BASE_URL = 'https://storage.readest.com';
-// Custom domain serving the readest-public bucket; durable media assets
-// (e.g. published book covers) are linked through this host.
-export const READEST_PUBLIC_ASSETS_BASE_URL = 'https://assets.readest.com';
+// AppImage / Android). Safe to embed — it is a public key. Empty until the
+// release signing key exists (BOOKROOM.md), which keeps the updater off.
+export const READEST_UPDATER_PUBKEY = '';
 
 export const READEST_OPDS_USER_AGENT = 'Readest/1.0 (OPDS Browser)';
 
@@ -1061,32 +1031,8 @@ export const AUTO_SCROLL_SPEED_STEP = 25;
 
 export const SHOW_UNREAD_STATUS_BADGE = false;
 
-export const DEFAULT_STORAGE_QUOTA: UserStorageQuota = {
-  free: 500 * 1024 * 1024,
-  plus: 5 * 1024 * 1024 * 1024,
-  pro: 20 * 1024 * 1024 * 1024,
-  purchase: 0,
-};
-
-export const DEFAULT_DAILY_TRANSLATION_QUOTA: UserDailyTranslationQuota = {
-  free: 10 * 1024,
-  plus: 100 * 1024,
-  pro: 500 * 1024,
-  purchase: 0,
-};
-
-export const DEFAULT_DAILY_TTS_QUOTA: UserDailyTTSQuota = {
-  free: 0,
-  plus: 500_000,
-  pro: 1_000_000,
-  purchase: 0,
-};
-
-// Readest Voice previews: one sample of at most this many characters, open to
-// any signed-in reader, within this daily allowance when their plan's quota is
-// smaller (about 30 typical samples).
-export const READEST_VOICE_PREVIEW_MAX_CHARS = 400;
-export const READEST_VOICE_PREVIEW_DAILY_CHARS = 6_000;
+// Voice previews read one passage of at most this many characters.
+export const VOICE_PREVIEW_MAX_CHARS = 400;
 
 export const DOUBLE_CLICK_INTERVAL_THRESHOLD_MS = 250;
 export const DISABLE_DOUBLE_CLICK_ON_MOBILE = true;

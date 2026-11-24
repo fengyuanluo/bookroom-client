@@ -27,6 +27,7 @@ import {
   DEFAULT_VIEW_SETTINGS_CONFIG,
 } from './constants';
 import { DEFAULT_AI_SETTINGS } from './ai/constants';
+import type { AISettings } from './ai/types';
 import { getTargetLang, isCJKEnv } from '@/utils/misc';
 import { safeLoadJSON, safeSaveJSON } from './persistence';
 
@@ -165,6 +166,16 @@ export async function loadSettings(ctx: Context): Promise<SystemSettings> {
     ...DEFAULT_AI_SETTINGS,
     ...settings.aiSettings,
   };
+  // The AI Gateway provider ran through Readest's server routes and was
+  // removed. Settings restored from a Readest backup fall back to the default
+  // provider and lose its fields, so its API key can't leak into a backup.
+  const aiSettings = settings.aiSettings as AISettings & Record<string, unknown>;
+  if ((aiSettings.provider as string) === 'ai-gateway') {
+    aiSettings.provider = DEFAULT_AI_SETTINGS.provider;
+  }
+  for (const key of Object.keys(aiSettings)) {
+    if (key.startsWith('aiGateway')) delete aiSettings[key];
+  }
 
   settings.localBooksDir = await ctx.fs.getPrefix('Books');
 

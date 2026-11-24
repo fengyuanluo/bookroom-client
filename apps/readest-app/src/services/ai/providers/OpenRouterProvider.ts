@@ -4,6 +4,7 @@ import type { AIProvider, AISettings, AIProviderName } from '../types';
 import { aiLogger } from '../logger';
 import { AI_TIMEOUTS } from '../utils/retry';
 import { getAIFetch } from '../utils/httpFetch';
+import { BOOKROOM_SOURCE_URL } from '@/services/constants';
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
@@ -49,8 +50,8 @@ export class OpenRouterProvider implements AIProvider {
       // Optional OpenRouter app attribution. Harmless for other OpenAI-
       // compatible backends (they ignore unknown headers).
       headers: {
-        'HTTP-Referer': 'https://readest.com',
-        'X-Title': 'Readest',
+        'HTTP-Referer': BOOKROOM_SOURCE_URL,
+        'X-Title': 'BookRoom',
       },
       // Route chat completions / embeddings through our environment-aware
       // fetch so streaming responses bypass the renderer's CORS sandbox
