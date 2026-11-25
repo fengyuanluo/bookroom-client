@@ -20,10 +20,6 @@ vi.mock('@/hooks/useTranslation', () => ({
     s.replace(/\{\{(\w+)\}\}/g, (_, key: string) => String(values?.[key] ?? '')),
 }));
 vi.mock('@/services/bookshelves/persistence', () => ({ saveBookshelfDraft: saveDraft }));
-vi.mock('@/store/absServerStore', () => ({
-  useABSServerStore: () => [],
-  isAbsBookOrphaned: () => false,
-}));
 vi.mock('@/store/themeStore', () => ({
   useThemeStore: () => ({
     systemUIVisible: false,
@@ -84,8 +80,10 @@ describe('bookshelf editor responsive layout', () => {
         await act(async () => {
           await eventDispatcher.dispatch('show-bookshelves');
         });
-        fireEvent.click(getByRole('button', { name: 'Add bookshelf' }));
-        fireEvent.click(getByRole('button', { name: 'Add bookshelf' }));
+        // Enough shelves that the tabs wrap at both widths.
+        for (let i = 0; i < 4; i++) {
+          fireEvent.click(getByRole('button', { name: 'Add bookshelf' }));
+        }
         const tabs = getByRole('group', { name: 'Bookshelves' });
         const expectCenteredRows = () => {
           const rows = new Map<number, DOMRect[]>();
@@ -128,8 +126,8 @@ describe('bookshelf editor responsive layout', () => {
     expect(title.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       tabs.getBoundingClientRect().top,
     );
-    fireEvent.click(getByRole('button', { name: /^Audiobooks/ }));
-    await waitFor(() => expect(title.textContent).toBe('Audiobooks'));
+    fireEvent.click(getByRole('button', { name: /^Recently read/ }));
+    await waitFor(() => expect(title.textContent).toBe('Recently read'));
   });
 
   it('previews skeuomorphic covers for books and groups using the shelf setting', async () => {
@@ -566,8 +564,6 @@ describe('bookshelf editor responsive layout', () => {
       await waitFor(() =>
         expect(saveDraft.mock.calls.at(-1)![2].map((s: { id: string }) => s.id)).toEqual([
           'recent',
-          'audiobooks',
-          'podcasts',
           'default',
           'finished',
         ]),
@@ -676,15 +672,13 @@ describe('bookshelf editor responsive layout', () => {
           .getAllByRole('button')
           .filter((tab) => tab.hasAttribute('aria-pressed'))
           .map((tab) => tab.textContent),
-      ).toEqual(['B', 'A', 'Audiobooks', 'Podcasts', 'Default', 'Finished books(Disabled)']),
+      ).toEqual(['B', 'A', 'Default', 'Finished books(Disabled)']),
     );
     expect(container.querySelector('dialog')?.open).toBe(true);
     await waitFor(() =>
       expect(saveDraft.mock.calls.at(-1)![2].map((s: { name: string }) => s.name)).toEqual([
         'B',
         'A',
-        '',
-        '',
         '',
         '',
       ]),
@@ -888,8 +882,6 @@ describe('bookshelf editor responsive layout', () => {
         expect(order()).toEqual([
           'My shelf',
           'Recently read',
-          'Audiobooks',
-          'Podcasts',
           'Default',
           'Finished books(Disabled)',
         ]),
@@ -903,8 +895,6 @@ describe('bookshelf editor responsive layout', () => {
           'Default',
           'My shelf',
           'Recently read',
-          'Audiobooks',
-          'Podcasts',
           'Finished books(Disabled)',
         ]),
       );
@@ -914,36 +904,18 @@ describe('bookshelf editor responsive layout', () => {
           'Default',
           'Recently read',
           'My shelf',
-          'Audiobooks',
-          'Podcasts',
           'Finished books(Disabled)',
         ]),
       );
       for (let i = 0; i < 3; i++)
         fireEvent.keyDown(shelf, { key: dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight', altKey: true });
-      expect(order()).toEqual([
-        'Default',
-        'Recently read',
-        'Audiobooks',
-        'Podcasts',
-        'Finished books(Disabled)',
-        'My shelf',
-      ]);
+      expect(order()).toEqual(['Default', 'Recently read', 'Finished books(Disabled)', 'My shelf']);
       fireEvent.keyDown(shelf, { key: dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight', altKey: true });
-      expect(order()).toEqual([
-        'Default',
-        'Recently read',
-        'Audiobooks',
-        'Podcasts',
-        'Finished books(Disabled)',
-        'My shelf',
-      ]);
+      expect(order()).toEqual(['Default', 'Recently read', 'Finished books(Disabled)', 'My shelf']);
       await waitFor(() =>
         expect(saveDraft.mock.calls.at(-1)?.[2].map((s: { id: string }) => s.id)).toEqual([
           'default',
           'recent',
-          'audiobooks',
-          'podcasts',
           'finished',
           expect.any(String),
         ]),

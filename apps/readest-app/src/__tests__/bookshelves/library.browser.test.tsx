@@ -60,6 +60,7 @@ const books: Book[] = Array.from({ length: 20 }, (_, index) => ({
   title: `Book ${index}`,
   author: 'Writer',
   format: 'EPUB',
+  remote: 'bookroom',
   createdAt: index,
   updatedAt: index,
   progress: [1, 100],

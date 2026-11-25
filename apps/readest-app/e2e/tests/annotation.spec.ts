@@ -283,7 +283,8 @@ test.describe('Annotation', () => {
     await reader.popupTool('Copy Link').click();
 
     const copied = await reader.readClipboard();
-    expect(copied).toMatch(/\/o\/book\/[^/]+\/annotation\/[^?]+\?cfi=/);
+    // The static export has no dynamic route, so the link carries its ids as query parameters.
+    expect(copied).toMatch(/\/o\?book=[^&]+&note=[^&]+&cfi=epubcfi/);
   });
 
   test('leaves the first line of text hittable when the page header is off', async ({

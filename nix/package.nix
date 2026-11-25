@@ -29,7 +29,7 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   inherit version;
-  pname = "readest";
+  pname = "bookroom";
   src =
     let
       tree = lib.fileset.toSource {
@@ -134,15 +134,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   postPatch = ''
     substituteInPlace src-tauri/tauri.conf.json \
-      --replace-fail \
-        '"beforeBuildCommand": "pnpm build && pnpm upload-sourcemaps"' \
-        '"beforeBuildCommand": "pnpm build"' \
-      --replace-fail '"createUpdaterArtifacts": true' '"createUpdaterArtifacts": false' \
-      --replace-fail '"productName": "Readest"' '"productName": "readest"'
+      --replace-fail '"createUpdaterArtifacts": true' '"createUpdaterArtifacts": false'
     jq 'del(.plugins."deep-link")' src-tauri/tauri.conf.json | sponge src-tauri/tauri.conf.json
     substituteInPlace src/services/constants.ts \
-      --replace-fail "autoCheckUpdates: true" "autoCheckUpdates: false" \
-      --replace-fail "telemetryEnabled: true" "telemetryEnabled: false"
+      --replace-fail "autoCheckUpdates: true" "autoCheckUpdates: false"
 
     jq '.version = "${finalAttrs.version}"' package.json | sponge package.json
 
@@ -219,7 +214,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   # The deb the nixpkgs tauri CLI bundles carries only the executable; ship
   # the CEF runtime next to it the way the CEF tauri CLI does for the deb
-  # (usr/share/Readest), since libcef.so is found through $ORIGIN.
+  # (usr/share/BookRoom), since libcef.so is found through $ORIGIN.
   postInstall = ''
     # Several plugins still enable tauri's default `wry` feature, so the wry
     # runtime is compiled in even though nothing uses it under CEF. Distro
@@ -229,21 +224,21 @@ rustPlatform.buildRustPackage (finalAttrs: {
     # uses bmalloc, whose static initializer starts a scavenger thread in every
     # process, and Chromium's zygote refuses to run multi-threaded. Drop them,
     # after checking that nothing in the executable refers to them.
-    if $NM -D --undefined-only $out/bin/readest | grep -Eq ' (webkit_|jsc_|JS[A-Z]|soup_)'; then
-      echo "readest references WebKitGTK/libsoup symbols; cannot drop the libraries" >&2
+    if $NM -D --undefined-only $out/bin/bookroom | grep -Eq ' (webkit_|jsc_|JS[A-Z]|soup_)'; then
+      echo "bookroom references WebKitGTK/libsoup symbols; cannot drop the libraries" >&2
       exit 1
     fi
     patchelf --remove-needed libwebkit2gtk-4.1.so.0 --remove-needed libjavascriptcoregtk-4.1.so.0 \
-      --remove-needed libsoup-3.0.so.0 $out/bin/readest
-    mkdir -p $out/lib/readest
-    mv $out/bin/readest $out/lib/readest/readest
-    ln -s ../lib/readest/readest $out/bin/readest
+      --remove-needed libsoup-3.0.so.0 $out/bin/bookroom
+    mkdir -p $out/lib/bookroom
+    mv $out/bin/bookroom $out/lib/bookroom/bookroom
+    ln -s ../lib/bookroom/bookroom $out/bin/bookroom
     for file in libcef.so libEGL.so libGLESv2.so libvk_swiftshader.so libvulkan.so.1 \
       vk_swiftshader_icd.json chrome_100_percent.pak chrome_200_percent.pak \
       resources.pak icudtl.dat v8_context_snapshot.bin; do
-      cp "$CEF_PATH/$file" $out/lib/readest/
+      cp "$CEF_PATH/$file" $out/lib/bookroom/
     done
-    cp -r "$CEF_PATH/locales" $out/lib/readest/
+    cp -r "$CEF_PATH/locales" $out/lib/bookroom/
   '';
 
   tursoPluginDeps = fetchPnpmDeps {
@@ -275,9 +270,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
   };
 
   meta = {
-    description = "Modern, feature-rich ebook reader";
-    homepage = "https://github.com/readest/readest";
-    mainProgram = "readest";
+    description = "BookRoom Reader, a Readest fork that signs in to a BookRoom server";
+    homepage = "https://github.com/fengyuanluo/bookroom-client";
+    mainProgram = "bookroom";
     license = lib.licenses.agpl3Plus;
     platforms = lib.platforms.linux;
   };
