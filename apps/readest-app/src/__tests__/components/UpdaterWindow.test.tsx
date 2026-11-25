@@ -179,7 +179,7 @@ describe('UpdaterContent — auto-translated changelog', () => {
     await waitFor(() => expect(tauriDownload).toHaveBeenCalledOnce());
     expect(vi.mocked(tauriDownload).mock.calls[0]!.slice(0, 2)).toEqual([
       `https://example.com/Readest_0.11.20_${abi}.apk`,
-      `/cache/Readest_0.11.20_${abi}.apk`,
+      `/cache/BookRoom_0.11.20_${abi}.apk`,
     ]);
   });
 

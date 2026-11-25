@@ -404,7 +404,7 @@ jobs:
 
           popd
           version=${{ needs.get-release.outputs.release_version }}
-          apk=Readest_${version}_${{ matrix.config.arch }}.apk
+          apk=BookRoom_${version}_${{ matrix.config.arch }}.apk
           pnpm tauri android build ${{ matrix.config.android_args }}
           cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk $apk
 
@@ -418,7 +418,7 @@ jobs:
         if: matrix.config.release == 'android'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: apps/readest-app/Readest_${{ needs.get-release.outputs.release_version }}_${{ matrix.config.arch }}.apk
+          subject-path: apps/readest-app/BookRoom_${{ needs.get-release.outputs.release_version }}_${{ matrix.config.arch }}.apk
 
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         id: tauri
@@ -456,7 +456,7 @@ jobs:
         if: matrix.config.release == 'linux'
         run: |
           set -euo pipefail
-          lib=target/release/bundle/appimage/Readest.AppDir/lib
+          lib=target/release/bundle/appimage/BookRoom.AppDir/lib
           for so in libsoftokn3.so libfreeblpriv3.so libnssckbi.so libsqlite3.so.0 \
                     libpulse.so.0 libspeechd.so.2 libxkbcommon-x11.so.0; do
             [ -e "$lib/$so" ] || { echo "::error::$so is missing from the AppImage bundle"; exit 1; }
@@ -509,15 +509,15 @@ jobs:
           version=${{ needs.get-release.outputs.release_version }}
 
           if [ "$arch" = "x86_64" ]; then
-            bin_file="Readest_${version}_x64-portable.exe"
+            bin_file="BookRoom_${version}_x64-portable.exe"
           elif [ "$arch" = "aarch64" ]; then
-            bin_file="Readest_${version}_arm64-portable.exe"
+            bin_file="BookRoom_${version}_arm64-portable.exe"
           else
             echo "Unknown architecture: $arch"
             exit 1
           fi
 
-          exe_file="target/${{ matrix.config.rust_target }}/release/readest.exe"
+          exe_file="target/${{ matrix.config.rust_target }}/release/bookroom.exe"
           # Browsers on Windows won't download zip files that contain exe files
           # so upload the exe files instead. This is totally stupid.
           # powershell.exe -Command "Compress-Archive -Path $exe_file -DestinationPath $bin_file -Force"
@@ -540,7 +540,7 @@ jobs:
         if: matrix.config.os == 'windows-latest'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: Readest_*-portable.exe
+          subject-path: BookRoom_*-portable.exe
 
       - name: download and update latest.json for Windows portable release
         if: matrix.config.os == 'windows-latest'
@@ -565,10 +565,10 @@ jobs:
           arch=${{ matrix.config.arch }}
 
           if [ "$arch" = "x86_64" ]; then
-            bin_file="Readest_${version}_x64-portable.exe"
+            bin_file="BookRoom_${version}_x64-portable.exe"
             platform_key="windows-x86_64-portable"
           elif [ "$arch" = "aarch64" ]; then
-            bin_file="Readest_${version}_arm64-portable.exe"
+            bin_file="BookRoom_${version}_arm64-portable.exe"
             platform_key="windows-aarch64-portable"
           else
             echo "Unknown architecture: $arch"
@@ -616,10 +616,10 @@ jobs:
 
           tag=${{ needs.get-release.outputs.release_tag }}
           version=${{ needs.get-release.outputs.release_version }}
-          gh release download "$tag" --pattern "Readest_${version}_*.apk.sig"
+          gh release download "$tag" --pattern "BookRoom_${version}_*.apk.sig"
 
           for arch in arm64 armv7 legacy; do
-            apk=Readest_${version}_${arch}.apk
+            apk=BookRoom_${version}_${arch}.apk
             # A separate assignment so a missing .sig fails the step (set -e).
             sig=$(cat ${apk}.sig)
             jq --arg url "https://github.com/${{ github.repository }}/releases/download/${tag}/${apk}" \

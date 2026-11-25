@@ -36,7 +36,9 @@ BookRoom 的官方客户端。基线：`upstream` = github.com/readest/readest�
 - 客户端配置副本只同步到 BookRoom。
 
 ### 6. 品牌与更新
-应用名、标识符、关于页、自动更新地址改为 BookRoom 自己的发布地址（GitHub Releases 的 `latest.json`；`updater.pubkey` 为空时更新关闭，配好签名密钥再开）。
+应用名、标识符、关于页、自动更新地址改为 BookRoom 自己的发布地址（`github.com/fengyuanluo/bookroom-client` Releases 的 `latest.json`）。发布产物统一命名 `BookRoom_<版本>_<架构>.*`。
+
+发布密钥（仓库 Secrets）：`TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` 签更新包，公钥写在 `tauri.conf.json` 的 `updater.pubkey` 与 `READEST_UPDATER_PUBKEY`；`ANDROID_KEY_BASE64`/`_ALIAS`/`_PASSWORD` 签 APK。私钥丢失后已安装的客户端无法再收到更新、APK 无法覆盖安装，务必离线备份。没有 Apple 证书，macOS 包不签名。
 
 CI（`.github/workflows`）：删除 `docker-image`、`vercel-merge`、`upload-to-r2`；`release.yml` 去掉 Discord 通知、浏览器扩展、R2 上传与 PostHog/Supabase/Sentry 注入，`latest.json` 的读写地址改为 `${{ github.repository }}`；`pull-request.yml` 去掉扩展测试与构建；`nightly.yml` 只能手动触发——它仍发布到上游的 R2，要先改成 GitHub `nightly` Release 才能恢复定时。
 

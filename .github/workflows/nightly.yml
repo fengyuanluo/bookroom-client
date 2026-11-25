@@ -269,7 +269,7 @@ jobs:
           echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
           popd
 
-          apk=Readest_${version}_${{ matrix.config.arch }}.apk
+          apk=BookRoom_${version}_${{ matrix.config.arch }}.apk
           pnpm tauri android build ${{ matrix.config.android_args }}
           cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk $apk
 
@@ -313,7 +313,7 @@ jobs:
         if: matrix.config.release == 'linux'
         run: |
           set -euo pipefail
-          lib=target/release/bundle/appimage/Readest.AppDir/lib
+          lib=target/release/bundle/appimage/BookRoom.AppDir/lib
           for so in libsoftokn3.so libfreeblpriv3.so libnssckbi.so libsqlite3.so.0 \
                     libpulse.so.0 libspeechd.so.2 libxkbcommon-x11.so.0; do
             [ -e "$lib/$so" ] || { echo "::error::$so is missing from the AppImage bundle"; exit 1; }
@@ -345,16 +345,16 @@ jobs:
           arch="${{ matrix.config.arch }}"
           rust_target="${{ matrix.config.rust_target }}"
 
-          # The clean NSIS build above produced bundle/nsis/Readest_<ver>_<x64|
+          # The clean NSIS build above produced bundle/nsis/BookRoom_<ver>_<x64|
           # arm64>-setup.exe (+ .sig). The portable rebuild below runs `tauri
           # build ... --bundles nsis` AGAIN with NEXT_PUBLIC_PORTABLE_APP=true,
           # which OVERWRITES that installer with a portable-flavored one. Stage
           # the clean installer + its updater .sig to a safe dir FIRST so the
           # collect step can read the untouched copy for the windows-* keys.
           if [ "$arch" = "x86_64" ]; then
-            nsis_name="Readest_${version}_x64-setup.exe"
+            nsis_name="BookRoom_${version}_x64-setup.exe"
           else
-            nsis_name="Readest_${version}_arm64-setup.exe"
+            nsis_name="BookRoom_${version}_arm64-setup.exe"
           fi
           nsis_src="target/${rust_target}/release/bundle/nsis/${nsis_name}"
           mkdir -p nsis-staged
@@ -367,11 +367,11 @@ jobs:
           popd
 
           if [ "$arch" = "x86_64" ]; then
-            bin_file="Readest_${version}_x64-portable.exe"
+            bin_file="BookRoom_${version}_x64-portable.exe"
           else
-            bin_file="Readest_${version}_arm64-portable.exe"
+            bin_file="BookRoom_${version}_arm64-portable.exe"
           fi
-          exe_file="target/${{ matrix.config.rust_target }}/release/readest.exe"
+          exe_file="target/${{ matrix.config.rust_target }}/release/bookroom.exe"
           # Browsers on Windows refuse to download zips containing exe files, so
           # ship the exe directly (matches release.yml).
           cp "$exe_file" "$bin_file"
@@ -424,7 +424,7 @@ jobs:
           case "$release" in
             android)
               # Signed in the android step; basenames already version-stamped.
-              apk="Readest_${version}_${arch}.apk"
+              apk="BookRoom_${version}_${arch}.apk"
               add_entry "apps/readest-app/$apk" "$apk" "android-${arch}"
               # Clients released before the per-ABI split look up
               # android-universal on every non-arm64 device; most are armv7.
@@ -434,25 +434,25 @@ jobs:
               fi
               ;;
             macos)
-              # Universal updater bundle: bundle/macos/Readest.app.tar.gz (no
+              # Universal updater bundle: bundle/macos/BookRoom.app.tar.gz (no
               # version/arch on disk). Upload under the stable convention name
-              # Readest_universal.app.tar.gz; both darwin keys point at it.
-              src="${bundle}/universal-apple-darwin/release/bundle/macos/Readest.app.tar.gz"
-              add_entry "$src" "Readest_universal.app.tar.gz" "darwin-aarch64"
+              # BookRoom_universal.app.tar.gz; both darwin keys point at it.
+              src="${bundle}/universal-apple-darwin/release/bundle/macos/BookRoom.app.tar.gz"
+              add_entry "$src" "BookRoom_universal.app.tar.gz" "darwin-aarch64"
               # Reuse the already-staged copy for the x86_64 key (same artifact).
-              x86_sig=$(cat "$out/Readest_universal.app.tar.gz.sig")
-              jq --arg sig "$x86_sig" --arg url "${base_url}/Readest_universal.app.tar.gz" \
+              x86_sig=$(cat "$out/BookRoom_universal.app.tar.gz.sig")
+              jq --arg sig "$x86_sig" --arg url "${base_url}/BookRoom_universal.app.tar.gz" \
                 '.platforms["darwin-x86_64"] = {signature: $sig, url: $url}' "$frag" > "$frag.tmp" && mv "$frag.tmp" "$frag"
-              echo "fragment += darwin-x86_64 -> Readest_universal.app.tar.gz"
+              echo "fragment += darwin-x86_64 -> BookRoom_universal.app.tar.gz"
               ;;
             windows)
               if [ "$arch" = "x86_64" ]; then
-                nsis_name="Readest_${version}_x64-setup.exe"
-                portable_name="Readest_${version}_x64-portable.exe"
+                nsis_name="BookRoom_${version}_x64-setup.exe"
+                portable_name="BookRoom_${version}_x64-portable.exe"
                 nsis_key="windows-x86_64"; portable_key="windows-x86_64-portable"
               else
-                nsis_name="Readest_${version}_arm64-setup.exe"
-                portable_name="Readest_${version}_arm64-portable.exe"
+                nsis_name="BookRoom_${version}_arm64-setup.exe"
+                portable_name="BookRoom_${version}_arm64-portable.exe"
                 nsis_key="windows-aarch64"; portable_key="windows-aarch64-portable"
               fi
               # Read the CLEAN NSIS installer staged before the portable rebuild
@@ -463,12 +463,12 @@ jobs:
               add_entry "$portable_name" "$portable_name" "$portable_key"
               ;;
             linux)
-              # CEF (sharun) AppImage: bundle/appimage/Readest_<ver>_<amd64|aarch64>.AppImage
+              # CEF (sharun) AppImage: bundle/appimage/BookRoom_<ver>_<amd64|aarch64>.AppImage
               if [ "$arch" = "x86_64" ]; then
-                appimage_name="Readest_${version}_amd64.AppImage"
+                appimage_name="BookRoom_${version}_amd64.AppImage"
                 key="linux-x86_64-appimage"
               else
-                appimage_name="Readest_${version}_aarch64.AppImage"
+                appimage_name="BookRoom_${version}_aarch64.AppImage"
                 key="linux-aarch64-appimage"
               fi
               # The Linux leg builds with `pnpm tauri build` WITHOUT `--target`

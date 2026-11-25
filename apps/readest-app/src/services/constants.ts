@@ -986,7 +986,7 @@ export const BOOK_IDS_SEPARATOR = '+';
 
 // BookRoom's own client repository: the source the AGPL requires us to offer,
 // and the GitHub Releases the updater reads.
-export const BOOKROOM_SOURCE_URL = 'https://github.com/luofengyuan/bookroom-client';
+export const BOOKROOM_SOURCE_URL = 'https://github.com/fengyuanluo/bookroom-client';
 
 const LATEST_DOWNLOAD_BASE_URL = `${BOOKROOM_SOURCE_URL}/releases/latest/download`;
 
@@ -998,9 +998,10 @@ export const READEST_NIGHTLY_UPDATER_FILE = `${BOOKROOM_SOURCE_URL}/releases/dow
 
 // Public (verification) key, identical to src-tauri/tauri.conf.json `updater.pubkey`.
 // Used to verify nightly artifacts in the custom install flows (portable /
-// AppImage / Android). Safe to embed — it is a public key. Empty until the
-// release signing key exists (BOOKROOM.md), which keeps the updater off.
-export const READEST_UPDATER_PUBKEY = '';
+// AppImage / Android). Safe to embed — it is a public key. Its private half is
+// the TAURI_SIGNING_PRIVATE_KEY release secret (BOOKROOM.md).
+export const READEST_UPDATER_PUBKEY =
+  'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCOTg1Q0E4QzBDNkU5MEMKUldRTTZjYkFxRnlZRzhuOU9IdFh3RkZub0NEUGxqbmdZcElmZ1p2cDR1L0xxSmtURDhBMk4xNnMK';
 
 export const READEST_OPDS_USER_AGENT = 'Readest/1.0 (OPDS Browser)';
 
