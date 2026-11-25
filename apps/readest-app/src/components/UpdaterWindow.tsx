@@ -22,6 +22,7 @@ import { getLocale } from '@/utils/misc';
 import { getAndroidPlatformKey, setLastShownReleaseNotesVersion } from '@/helpers/updater';
 import type { ResolvedNightlyUpdate } from '@/helpers/updater';
 import {
+  BOOKROOM_SOURCE_URL,
   READEST_UPDATER_FILE,
   READEST_CHANGELOG_FILE,
   READEST_UPDATER_PUBKEY,
@@ -602,20 +603,11 @@ export const UpdaterContent = ({
 
                 {changelogs.length > 0 && semver.gt(changelogs[0]!.version, currentVersion) ? (
                   <div className='flex gap-2'>
-                    {(appService?.isIOSApp || appService?.isMacOSApp) && (
+                    {(appService?.isIOSApp ||
+                      appService?.isMacOSApp ||
+                      appService?.isAndroidApp) && (
                       <Link
-                        href='https://apps.apple.com/app/id6738622779'
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='btn btn-primary btn-sm'
-                      >
-                        {_('Check Update')}
-                      </Link>
-                    )}
-
-                    {appService?.isAndroidApp && (
-                      <Link
-                        href='https://play.google.com/store/apps/details?id=com.bilingify.readest'
+                        href={`${BOOKROOM_SOURCE_URL}/releases/latest`}
                         target='_blank'
                         rel='noopener noreferrer'
                         className='btn btn-primary btn-sm'
