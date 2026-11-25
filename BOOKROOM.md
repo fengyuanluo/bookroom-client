@@ -38,9 +38,13 @@ BookRoom 的官方客户端。基线：`upstream` = github.com/readest/readest�
 ### 6. 品牌与更新
 应用名、标识符、关于页、自动更新地址改为 BookRoom 自己的发布地址（`github.com/fengyuanluo/bookroom-client` Releases 的 `latest.json`）。发布产物统一命名 `BookRoom_<版本>_<架构>.*`。
 
-发布密钥（仓库 Secrets）：`TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` 签更新包，公钥写在 `tauri.conf.json` 的 `updater.pubkey` 与 `READEST_UPDATER_PUBKEY`；`ANDROID_KEY_BASE64`/`_ALIAS`/`_PASSWORD` 签 APK。私钥丢失后已安装的客户端无法再收到更新、APK 无法覆盖安装，务必离线备份。没有 Apple 证书，macOS 包不签名。
+发布密钥（仓库 Secrets）：`TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` 签更新包，公钥写在 `tauri.conf.json` 的 `updater.pubkey` 与 `READEST_UPDATER_PUBKEY`；`ANDROID_KEY_BASE64`/`_ALIAS`/`_PASSWORD` 签 APK（别名不要用会出现在日志里的词，GitHub 会把密钥值在日志中打码）。私钥丢失后已安装的客户端无法再收到更新、APK 无法覆盖安装，务必离线备份。`APPLE_*` 可选：未配置时 macOS 包不签名。
 
-CI（`.github/workflows`）：删除 `docker-image`、`vercel-merge`、`upload-to-r2`；`release.yml` 去掉 Discord 通知、浏览器扩展、R2 上传与 PostHog/Supabase/Sentry 注入，`latest.json` 的读写地址改为 `${{ github.repository }}`；`pull-request.yml` 去掉扩展测试与构建；`nightly.yml` 只能手动触发——它仍发布到上游的 R2，要先改成 GitHub `nightly` Release 才能恢复定时。
+Android 应用 ID 与 Kotlin 包名都是 `com.bookroom.reader`（`gen/android/app/src/main/java/com/bookroom/reader/`），必须与 `tauri.conf.json` 的 `identifier` 一致：`tauri android init` 按它生成 `TauriActivity` 与 `BuildConfig`。
+
+发版：把 `apps/readest-app/package.json` 的 `version` 与 `release-notes.json` 改好推到 `main`，在 GitHub 发布 Release（标签 `v<版本>`）即触发 `release.yml`：Android ×3、Linux ×2、macOS、Windows ×2 与 KOReader/Calibre/CrossPoint 插件构建并上传，`latest.json` 由各平台合并。重跑用 `workflow_dispatch`（取最新 Release，资源覆盖上传）。
+
+CI（`.github/workflows`）：删除 `docker-image`、`vercel-merge`、`upload-to-r2`；`release.yml` 去掉 Discord 通知、浏览器扩展、R2 上传与 PostHog/Supabase/Sentry 注入，`latest.json` 的读写地址改为 `${{ github.repository }}`；`pull-request.yml` 去掉扩展测试与构建，Web e2e 用 `pnpm start-web`（`scripts/serve-web.mjs`，与 BookRoom `WEB_DIR` 相同的路由与跨源隔离头）；`nightly.yml` 只能手动触发——它仍发布到上游的 R2，要先改成 GitHub `nightly` Release 才能恢复定时。`nix-build.yml` 只读上游 Cachix（无 `CACHIX_AUTH_TOKEN` 不推送）。
 
 ## 构建与验证
 
